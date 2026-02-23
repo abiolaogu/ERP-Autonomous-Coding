@@ -1,0 +1,10 @@
+version: 1
+module: ERP-OpenHands
+protected_actions:
+  - merge_to_main
+  - force_push
+  - branch_delete
+  - deploy_trigger
+controls:
+  require_human_approval: true
+  require_audit_log: true

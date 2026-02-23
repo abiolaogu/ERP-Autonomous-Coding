@@ -1,0 +1,3 @@
+package azuredevops
+
+func TriggerPipeline() {}

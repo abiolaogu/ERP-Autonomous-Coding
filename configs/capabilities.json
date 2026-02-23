@@ -1,0 +1,28 @@
+{
+  "module": "ERP-OpenHands",
+  "version": "1.0.0",
+  "capabilities": [
+    "autonomous_coding",
+    "code_generation",
+    "code_review",
+    "test_generation",
+    "github_integration",
+    "gitlab_integration",
+    "bitbucket_integration",
+    "azure_devops_integration",
+    "jetbrains_plugin",
+    "vscode_extension",
+    "vim_neovim_plugin",
+    "emacs_package",
+    "sandboxed_execution",
+    "ci_cd_orchestration",
+    "security_scanning",
+    "erp_module_development",
+    "pr_management",
+    "issue_triage",
+    "code_refactoring",
+    "cli_tool"
+  ],
+  "integration_mode": "standalone_plus_suite",
+  "aidd_governance": "enforced"
+}

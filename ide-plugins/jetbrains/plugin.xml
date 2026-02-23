@@ -1,0 +1,5 @@
+<idea-plugin>
+  <id>dev.erp.openhands</id>
+  <name>OpenHands</name>
+  <vendor>ERP</vendor>
+</idea-plugin>

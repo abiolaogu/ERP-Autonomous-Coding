@@ -1,0 +1,7 @@
+{
+  "name": "openhands-vscode",
+  "displayName": "OpenHands",
+  "version": "1.0.0",
+  "engines": { "vscode": "^1.90.0" },
+  "main": "./dist/extension.js"
+}

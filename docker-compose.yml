@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  openhands-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8095:8090"
+
+  agent-core:
+    build: ./services/agent-core
+    ports:
+      - "8205:8080"
+
+  review-engine:
+    build: ./services/review-engine
+    ports:
+      - "8206:8080"
+
+  sandbox-runtime:
+    build: ./services/sandbox-runtime
+
+  git-bridge:
+    build: ./services/git-bridge
+
+  ide-server:
+    build: ./services/ide-server
+    ports:
+      - "8207:8080"
+
+  redis:
+    image: redis:7
