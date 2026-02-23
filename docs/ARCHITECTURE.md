@@ -1,18 +1,35 @@
-# ERP-OpenHands Architecture
+# ERP-Autonomous-Coding Architecture
 
-Autonomous coding platform for ERP customization and extension.
+## C4 Context
+- Module: `ERP-Autonomous-Coding`
+- Mode: standalone_plus_suite
+- Auth: ERP-IAM (OIDC/JWT)
+- Entitlements: ERP-Platform
 
-## Components
-- `agent-core`: planning, code generation, test synthesis
-- `sandbox-runtime`: isolated execution
-- `git-bridge`: provider-agnostic Git adapter
-- `ide-server`: IDE protocol bridge
-- `review-engine`: security and quality review
+## Container View
+```mermaid
+flowchart TB
+    U["Users"] --> G["Gateway / API"]
+    S1["agent-core"]
+    S2["git-bridge"]
+    S3["ide-server"]
+    S4["review-engine"]
+    S5["sandbox-runtime"]
+    S6["task-planner"]
+    G --> S1
+    G --> S2
+    G --> S3
+    G --> S4
+    G --> S5
+    G --> S6
+    G --> DB["PostgreSQL"]
+    G --> EV["Redpanda/Kafka"]
+```
 
-## Integrations
-- ERP-IAM credential vault and RBAC
-- ERP-AI orchestration
-- ERP-OpenClaw NL bridge
-- ERP-iPaaS webhook workflows
-- ERP-Platform module introspection
-- ERP-BI productivity metrics
+## Service Inventory
+- `agent-core`
+- `git-bridge`
+- `ide-server`
+- `review-engine`
+- `sandbox-runtime`
+- `task-planner`

@@ -1,4 +1,4 @@
-# ERP-OpenHands
+# ERP-Autonomous-Coding
 
 Autonomous AI coding module for ERP platform development.
 

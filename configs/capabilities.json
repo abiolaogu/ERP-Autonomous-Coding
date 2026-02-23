@@ -1,5 +1,5 @@
 {
-  "module": "ERP-OpenHands",
+  "module": "ERP-Autonomous-Coding",
   "version": "1.0.0",
   "capabilities": [
     "autonomous_coding",

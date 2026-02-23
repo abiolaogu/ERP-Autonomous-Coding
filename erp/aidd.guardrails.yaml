@@ -1,10 +1,17 @@
 version: 1
-module: ERP-OpenHands
-protected_actions:
-  - merge_to_main
-  - force_push
-  - branch_delete
-  - deploy_trigger
+module: ERP-Autonomous-Coding
+autonomous_actions:
+  - read_only_queries
+  - low_risk_notifications
+supervised_actions:
+  - data_mutations
+  - workflow_automation
+  - bulk_operations
+prohibited_actions:
+  - cross_tenant_data_access
+  - irreversible_delete_without_backup
+  - privilege_escalation
 controls:
-  require_human_approval: true
-  require_audit_log: true
+  require_human_in_the_loop_for_high_risk: true
+  decision_logging: true
+  rollback_window_hours: 24

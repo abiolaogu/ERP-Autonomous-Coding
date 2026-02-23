@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="OpenHands Agent Core")
+app = FastAPI(title="Autonomous Coding Agent Core")
 
 @app.get('/healthz')
 def healthz():

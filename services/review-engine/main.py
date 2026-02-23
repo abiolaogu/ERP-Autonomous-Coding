@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-app = FastAPI(title="OpenHands Review Engine")
+app = FastAPI(title="Autonomous Coding Review Engine")
 
 @app.get('/healthz')
 def healthz():

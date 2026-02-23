@@ -1,5 +1,5 @@
 {
-  "name": "openhands-ide-server",
+  "name": "autonomous-coding-ide-server",
   "version": "1.0.0",
   "private": true,
   "main": "index.js",

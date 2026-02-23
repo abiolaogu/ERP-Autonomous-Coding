@@ -1,5 +1,5 @@
 <idea-plugin>
-  <id>dev.erp.openhands</id>
-  <name>OpenHands</name>
+  <id>dev.erp.autonomous-coding</id>
+  <name>Autonomous Coding</name>
   <vendor>ERP</vendor>
 </idea-plugin>

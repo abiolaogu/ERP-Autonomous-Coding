@@ -18,11 +18,11 @@ type capabilityDoc struct {
 func loadCapabilities() capabilityDoc {
 	b, err := os.ReadFile("configs/capabilities.json")
 	if err != nil {
-		return capabilityDoc{Module: "ERP-OpenHands", Capabilities: []string{"unconfigured"}}
+		return capabilityDoc{Module: "ERP-Autonomous-Coding", Capabilities: []string{"unconfigured"}}
 	}
 	var d capabilityDoc
 	if err := json.Unmarshal(b, &d); err != nil {
-		return capabilityDoc{Module: "ERP-OpenHands", Capabilities: []string{"invalid_config"}}
+		return capabilityDoc{Module: "ERP-Autonomous-Coding", Capabilities: []string{"invalid_config"}}
 	}
 	return d
 }
@@ -38,7 +38,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "healthy", "module": "ERP-OpenHands"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "healthy", "module": "ERP-Autonomous-Coding"})
 	})
 
 	mux.HandleFunc("/v1/capabilities", func(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +62,7 @@ func main() {
 	})
 
 	addr := ":8090"
-	log.Printf("ERP-OpenHands listening on %s", addr)
+	log.Printf("ERP-Autonomous-Coding listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
 	}
