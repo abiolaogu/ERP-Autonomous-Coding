@@ -172,3 +172,5 @@ export const ApprovalList: React.FC = () => {
     </div>
   );
 };
+
+export default ApprovalList;

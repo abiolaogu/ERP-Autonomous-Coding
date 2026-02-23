@@ -352,3 +352,5 @@ export const RunShow: React.FC = () => {
     </div>
   );
 };
+
+export default RunShow;

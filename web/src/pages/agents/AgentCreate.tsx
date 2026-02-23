@@ -93,11 +93,11 @@ export const AgentCreate: React.FC = () => {
           >
             <InputNumber
               style={{ width: "100%" }}
-              min={1000}
-              max={1000000}
+              min={1000 as number}
+              max={1000000 as number}
               step={10000}
               formatter={(value) => `${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-              parser={(value) => Number(value?.replace(/,/g, "") ?? 0)}
+              parser={(value) => Number(value!.replace(/,/g, ""))}
             />
           </Form.Item>
 
@@ -114,3 +114,5 @@ export const AgentCreate: React.FC = () => {
     </div>
   );
 };
+
+export default AgentCreate;

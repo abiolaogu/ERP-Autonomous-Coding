@@ -347,3 +347,5 @@ export const PipelineShow: React.FC = () => {
     </div>
   );
 };
+
+export default PipelineShow;

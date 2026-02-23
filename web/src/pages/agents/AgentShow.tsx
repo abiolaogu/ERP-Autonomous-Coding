@@ -347,3 +347,5 @@ export const AgentShow: React.FC = () => {
     </div>
   );
 };
+
+export default AgentShow;

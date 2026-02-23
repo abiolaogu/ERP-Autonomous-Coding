@@ -4,8 +4,8 @@ import { GRAPHQL_URL, TOKEN_KEY } from "./utils/constants";
 
 const gqlClient = new GraphQLClient(GRAPHQL_URL, {
   headers: () => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    const token = localStorage.getItem(TOKEN_KEY) || "";
+    return { Authorization: `Bearer ${token}` };
   },
 });
 

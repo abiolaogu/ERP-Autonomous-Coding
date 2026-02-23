@@ -273,3 +273,5 @@ export const ApprovalShow: React.FC = () => {
     </div>
   );
 };
+
+export default ApprovalShow;

@@ -208,3 +208,5 @@ export const AgentList: React.FC = () => {
     </div>
   );
 };
+
+export default AgentList;

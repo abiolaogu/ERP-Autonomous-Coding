@@ -339,3 +339,5 @@ export const CodeReviewShow: React.FC = () => {
     </div>
   );
 };
+
+export default CodeReviewShow;
