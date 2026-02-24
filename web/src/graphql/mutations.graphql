@@ -1,0 +1,231 @@
+### coding_sessions ###
+
+mutation CreateCodingSession($object: coding_sessions_insert_input!) {
+  insert_coding_sessions_one(object: $object) {
+    id
+    user_id
+    title
+    description
+    status
+    language
+    repository_id
+    branch
+    agent_id
+    config
+    started_at
+    completed_at
+    created_at
+    updated_at
+  }
+}
+
+mutation UpdateCodingSession($id: String!, $set: coding_sessions_set_input!) {
+  update_coding_sessions_by_pk(pk_columns: { id: $id }, _set: $set) {
+    id
+    user_id
+    title
+    description
+    status
+    language
+    repository_id
+    branch
+    agent_id
+    config
+    started_at
+    completed_at
+    created_at
+    updated_at
+  }
+}
+
+mutation DeleteCodingSession($id: String!) {
+  delete_coding_sessions_by_pk(id: $id) {
+    id
+  }
+}
+
+### coding_reviews ###
+
+mutation CreateCodingReview($object: coding_reviews_insert_input!) {
+  insert_coding_reviews_one(object: $object) {
+    id
+    session_id
+    reviewer_id
+    status
+    title
+    description
+    diff
+    files_changed
+    additions
+    deletions
+    comments
+    approval_status
+    merged_at
+    created_at
+    updated_at
+  }
+}
+
+mutation UpdateCodingReview($id: String!, $set: coding_reviews_set_input!) {
+  update_coding_reviews_by_pk(pk_columns: { id: $id }, _set: $set) {
+    id
+    session_id
+    reviewer_id
+    status
+    title
+    description
+    diff
+    files_changed
+    additions
+    deletions
+    comments
+    approval_status
+    merged_at
+    created_at
+    updated_at
+  }
+}
+
+mutation DeleteCodingReview($id: String!) {
+  delete_coding_reviews_by_pk(id: $id) {
+    id
+  }
+}
+
+### coding_plans ###
+
+mutation CreateCodingPlan($object: coding_plans_insert_input!) {
+  insert_coding_plans_one(object: $object) {
+    id
+    session_id
+    title
+    description
+    status
+    steps
+    current_step
+    total_steps
+    estimated_duration
+    actual_duration
+    created_at
+    updated_at
+  }
+}
+
+mutation UpdateCodingPlan($id: String!, $set: coding_plans_set_input!) {
+  update_coding_plans_by_pk(pk_columns: { id: $id }, _set: $set) {
+    id
+    session_id
+    title
+    description
+    status
+    steps
+    current_step
+    total_steps
+    estimated_duration
+    actual_duration
+    created_at
+    updated_at
+  }
+}
+
+mutation DeleteCodingPlan($id: String!) {
+  delete_coding_plans_by_pk(id: $id) {
+    id
+  }
+}
+
+### coding_repositories ###
+
+mutation CreateCodingRepository($object: coding_repositories_insert_input!) {
+  insert_coding_repositories_one(object: $object) {
+    id
+    name
+    description
+    url
+    provider
+    default_branch
+    language
+    framework
+    is_private
+    owner_id
+    last_synced_at
+    config
+    created_at
+    updated_at
+  }
+}
+
+mutation UpdateCodingRepository($id: String!, $set: coding_repositories_set_input!) {
+  update_coding_repositories_by_pk(pk_columns: { id: $id }, _set: $set) {
+    id
+    name
+    description
+    url
+    provider
+    default_branch
+    language
+    framework
+    is_private
+    owner_id
+    last_synced_at
+    config
+    created_at
+    updated_at
+  }
+}
+
+mutation DeleteCodingRepository($id: String!) {
+  delete_coding_repositories_by_pk(id: $id) {
+    id
+  }
+}
+
+### coding_sandboxes ###
+
+mutation CreateCodingSandbox($object: coding_sandboxes_insert_input!) {
+  insert_coding_sandboxes_one(object: $object) {
+    id
+    session_id
+    name
+    status
+    environment
+    runtime
+    image
+    cpu_limit
+    memory_limit
+    timeout_seconds
+    ports
+    env_vars
+    started_at
+    stopped_at
+    created_at
+    updated_at
+  }
+}
+
+mutation UpdateCodingSandbox($id: String!, $set: coding_sandboxes_set_input!) {
+  update_coding_sandboxes_by_pk(pk_columns: { id: $id }, _set: $set) {
+    id
+    session_id
+    name
+    status
+    environment
+    runtime
+    image
+    cpu_limit
+    memory_limit
+    timeout_seconds
+    ports
+    env_vars
+    started_at
+    stopped_at
+    created_at
+    updated_at
+  }
+}
+
+mutation DeleteCodingSandbox($id: String!) {
+  delete_coding_sandboxes_by_pk(id: $id) {
+    id
+  }
+}

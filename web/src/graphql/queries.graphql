@@ -1,0 +1,276 @@
+### coding_sessions ###
+
+query GetCodingSessions(
+  $where: coding_sessions_bool_exp
+  $order_by: [coding_sessions_order_by!]
+  $limit: Int
+  $offset: Int
+) {
+  coding_sessions(
+    where: $where
+    order_by: $order_by
+    limit: $limit
+    offset: $offset
+  ) {
+    id
+    user_id
+    title
+    description
+    status
+    language
+    repository_id
+    branch
+    agent_id
+    config
+    started_at
+    completed_at
+    created_at
+    updated_at
+  }
+  coding_sessions_aggregate(where: $where) {
+    aggregate {
+      count
+    }
+  }
+}
+
+query GetCodingSessionById($id: String!) {
+  coding_sessions_by_pk(id: $id) {
+    id
+    user_id
+    title
+    description
+    status
+    language
+    repository_id
+    branch
+    agent_id
+    config
+    started_at
+    completed_at
+    created_at
+    updated_at
+  }
+}
+
+### coding_reviews ###
+
+query GetCodingReviews(
+  $where: coding_reviews_bool_exp
+  $order_by: [coding_reviews_order_by!]
+  $limit: Int
+  $offset: Int
+) {
+  coding_reviews(
+    where: $where
+    order_by: $order_by
+    limit: $limit
+    offset: $offset
+  ) {
+    id
+    session_id
+    reviewer_id
+    status
+    title
+    description
+    diff
+    files_changed
+    additions
+    deletions
+    comments
+    approval_status
+    merged_at
+    created_at
+    updated_at
+  }
+  coding_reviews_aggregate(where: $where) {
+    aggregate {
+      count
+    }
+  }
+}
+
+query GetCodingReviewById($id: String!) {
+  coding_reviews_by_pk(id: $id) {
+    id
+    session_id
+    reviewer_id
+    status
+    title
+    description
+    diff
+    files_changed
+    additions
+    deletions
+    comments
+    approval_status
+    merged_at
+    created_at
+    updated_at
+  }
+}
+
+### coding_plans ###
+
+query GetCodingPlans(
+  $where: coding_plans_bool_exp
+  $order_by: [coding_plans_order_by!]
+  $limit: Int
+  $offset: Int
+) {
+  coding_plans(
+    where: $where
+    order_by: $order_by
+    limit: $limit
+    offset: $offset
+  ) {
+    id
+    session_id
+    title
+    description
+    status
+    steps
+    current_step
+    total_steps
+    estimated_duration
+    actual_duration
+    created_at
+    updated_at
+  }
+  coding_plans_aggregate(where: $where) {
+    aggregate {
+      count
+    }
+  }
+}
+
+query GetCodingPlanById($id: String!) {
+  coding_plans_by_pk(id: $id) {
+    id
+    session_id
+    title
+    description
+    status
+    steps
+    current_step
+    total_steps
+    estimated_duration
+    actual_duration
+    created_at
+    updated_at
+  }
+}
+
+### coding_repositories ###
+
+query GetCodingRepositories(
+  $where: coding_repositories_bool_exp
+  $order_by: [coding_repositories_order_by!]
+  $limit: Int
+  $offset: Int
+) {
+  coding_repositories(
+    where: $where
+    order_by: $order_by
+    limit: $limit
+    offset: $offset
+  ) {
+    id
+    name
+    description
+    url
+    provider
+    default_branch
+    language
+    framework
+    is_private
+    owner_id
+    last_synced_at
+    config
+    created_at
+    updated_at
+  }
+  coding_repositories_aggregate(where: $where) {
+    aggregate {
+      count
+    }
+  }
+}
+
+query GetCodingRepositoryById($id: String!) {
+  coding_repositories_by_pk(id: $id) {
+    id
+    name
+    description
+    url
+    provider
+    default_branch
+    language
+    framework
+    is_private
+    owner_id
+    last_synced_at
+    config
+    created_at
+    updated_at
+  }
+}
+
+### coding_sandboxes ###
+
+query GetCodingSandboxes(
+  $where: coding_sandboxes_bool_exp
+  $order_by: [coding_sandboxes_order_by!]
+  $limit: Int
+  $offset: Int
+) {
+  coding_sandboxes(
+    where: $where
+    order_by: $order_by
+    limit: $limit
+    offset: $offset
+  ) {
+    id
+    session_id
+    name
+    status
+    environment
+    runtime
+    image
+    cpu_limit
+    memory_limit
+    timeout_seconds
+    ports
+    env_vars
+    started_at
+    stopped_at
+    created_at
+    updated_at
+  }
+  coding_sandboxes_aggregate(where: $where) {
+    aggregate {
+      count
+    }
+  }
+}
+
+query GetCodingSandboxById($id: String!) {
+  coding_sandboxes_by_pk(id: $id) {
+    id
+    session_id
+    name
+    status
+    environment
+    runtime
+    image
+    cpu_limit
+    memory_limit
+    timeout_seconds
+    ports
+    env_vars
+    started_at
+    stopped_at
+    created_at
+    updated_at
+  }
+}

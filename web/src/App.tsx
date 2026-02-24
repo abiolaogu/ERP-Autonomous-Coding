@@ -16,7 +16,8 @@ import {
 
 import { theme } from "./theme";
 import { authProvider } from "./authProvider";
-import { dataProvider } from "./dataProvider";
+import { dataProvider } from "./providers/hasuraDataProvider";
+import { liveProvider } from "./providers/hasuraLiveProvider";
 import { MainLayout } from "./components/Layout/MainLayout";
 
 import "@refinedev/antd/dist/reset.css";
@@ -58,6 +59,7 @@ const App: React.FC = () => {
             <Refine
               routerProvider={routerProvider}
               dataProvider={dataProvider}
+              liveProvider={liveProvider}
               authProvider={authProvider}
               notificationProvider={useNotificationProvider}
               resources={[

@@ -3,10 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -17,14 +19,6 @@ type capabilityDoc struct {
 	Capabilities    []string `json:"capabilities"`
 	IntegrationMode string   `json:"integration_mode,omitempty"`
 	AIDDGovernance  string   `json:"aidd_governance,omitempty"`
-}
-
-type taskRunRequest struct {
-	Task         string `json:"task"`
-	Repository   string `json:"repository"`
-	Provider     string `json:"provider"`
-	Priority     string `json:"priority"`
-	RequireHuman bool   `json:"require_human_approval"`
 }
 
 var reqCounter uint64
@@ -50,12 +44,6 @@ func writeJSON(w http.ResponseWriter, code int, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-func decodeJSON(r *http.Request, dst any) error {
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-	return decoder.Decode(dst)
-}
-
 func nextRequestID(r *http.Request) string {
 	if id := r.Header.Get("X-Request-ID"); id != "" {
 		return id
@@ -74,10 +62,76 @@ func (s *statusRecorder) WriteHeader(status int) {
 	s.ResponseWriter.WriteHeader(status)
 }
 
+// env returns the value of the environment variable named by key,
+// or the provided fallback if the variable is unset or empty.
+func env(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// corsOrigins returns the set of allowed CORS origins read from the
+// CORS_ORIGINS environment variable (comma-separated). If the variable
+// is not set, it defaults to allowing all origins ("*").
+func corsOrigins() []string {
+	raw := os.Getenv("CORS_ORIGINS")
+	if raw == "" {
+		return []string{"*"}
+	}
+	parts := strings.Split(raw, ",")
+	origins := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			origins = append(origins, p)
+		}
+	}
+	if len(origins) == 0 {
+		return []string{"*"}
+	}
+	return origins
+}
+
+// withCORS wraps a handler with CORS header handling. Allowed origins are
+// read once at startup from the CORS_ORIGINS env var.
+func withCORS(origins []string, next http.Handler) http.Handler {
+	allowAll := len(origins) == 1 && origins[0] == "*"
+	originSet := make(map[string]struct{}, len(origins))
+	for _, o := range origins {
+		originSet[o] = struct{}{}
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+
+		if allowAll {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		} else if origin != "" {
+			if _, ok := originSet[origin]; ok {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+			}
+		}
+
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-Tenant-ID")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func withServerDefaults(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		requestID := nextRequestID(r)
+
 		w.Header().Set("X-Request-ID", requestID)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -103,16 +157,46 @@ func withServerDefaults(next http.Handler) http.Handler {
 	})
 }
 
+// proxyRoute registers a reverse proxy for the given path prefix. Requests
+// to both "/prefix" and "/prefix/..." are forwarded to the backend URL.
+func proxyRoute(mux *http.ServeMux, pathPrefix, backendURL string) {
+	target, err := url.Parse(backendURL)
+	if err != nil {
+		log.Fatalf("invalid backend URL %q for prefix %s: %v", backendURL, pathPrefix, err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("proxy error prefix=%s target=%s err=%v", pathPrefix, backendURL, err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{
+			"error":  "bad_gateway",
+			"detail": fmt.Sprintf("upstream %s unreachable", pathPrefix),
+		})
+	}
+
+	mux.HandleFunc(pathPrefix+"/", func(w http.ResponseWriter, r *http.Request) {
+		proxy.ServeHTTP(w, r)
+	})
+	mux.HandleFunc(pathPrefix, func(w http.ResponseWriter, r *http.Request) {
+		proxy.ServeHTTP(w, r)
+	})
+
+	log.Printf("route %s -> %s", pathPrefix, backendURL)
+}
+
 func main() {
 	doc := loadCapabilities()
+	origins := corsOrigins()
 	mux := http.NewServeMux()
+
+	// --- Health & capabilities (gateway-level) ---
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "healthy", "module": "ERP-Autonomous-Coding"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "healthy", "module": doc.Module})
 	})
 
 	mux.HandleFunc("/v1/capabilities", func(w http.ResponseWriter, r *http.Request) {
@@ -123,41 +207,16 @@ func main() {
 		writeJSON(w, http.StatusOK, doc)
 	})
 
-	mux.HandleFunc("/v1/tasks/run", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-			return
-		}
-		tenantID := r.Header.Get("X-Tenant-ID")
-		if tenantID == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing X-Tenant-ID"})
-			return
-		}
-		auth := r.Header.Get("Authorization")
-		if len(auth) < 20 {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing/invalid bearer token"})
-			return
-		}
-		var req taskRunRequest
-		if err := decodeJSON(r, &req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json payload"})
-			return
-		}
-		if req.Task == "" || req.Repository == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "task and repository are required"})
-			return
-		}
-		writeJSON(w, http.StatusAccepted, map[string]any{
-			"status":                 "queued",
-			"message":                "coding task enqueued",
-			"tenant":                 tenantID,
-			"task":                   req.Task,
-			"repository":             req.Repository,
-			"provider":               req.Provider,
-			"priority":               req.Priority,
-			"require_human_approval": req.RequireHuman,
-		})
-	})
+	// --- Reverse-proxy routes to backend microservices ---
+
+	proxyRoute(mux, "/v1/coding-sessions", env("AGENT_CORE_URL", "http://agent-core:8080"))
+	proxyRoute(mux, "/v1/repositories", env("GIT_BRIDGE_URL", "http://git-bridge:8080"))
+	proxyRoute(mux, "/v1/code-reviews", env("REVIEW_ENGINE_URL", "http://review-engine:8080"))
+	proxyRoute(mux, "/v1/sandboxes", env("SANDBOX_RUNTIME_URL", "http://sandbox-runtime:8080"))
+	proxyRoute(mux, "/v1/coding-plans", env("TASK_PLANNER_URL", "http://task-planner:8080"))
+	proxyRoute(mux, "/v1/ide", env("IDE_SERVER_URL", "http://ide-server:3000"))
+
+	// --- Server ---
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -165,9 +224,11 @@ func main() {
 	}
 	addr := ":" + port
 
+	handler := withServerDefaults(withCORS(origins, mux))
+
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           withServerDefaults(mux),
+		Handler:           handler,
 		ReadHeaderTimeout: 2 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -175,7 +236,7 @@ func main() {
 		MaxHeaderBytes:    1 << 20,
 	}
 
-	log.Printf("ERP-Autonomous-Coding listening on %s", addr)
+	log.Printf("%s gateway listening on %s (CORS origins: %v)", doc.Module, addr, origins)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}

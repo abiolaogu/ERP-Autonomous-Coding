@@ -23,38 +23,35 @@ import (
 )
 
 const (
-	serviceName = "sandbox-runtime"
+	serviceName = "review-engine"
 	moduleName  = "ERP-Autonomous-Coding"
-	basePath    = "/v1/sandboxes"
+	basePath    = "/v1/code-reviews"
 	dbName      = "erp_coding"
-	tableName   = "coding_sandboxes"
-	eventTopic  = "erp.coding.sandbox"
+	tableName   = "coding_reviews"
+	eventTopic  = "erp.coding.review"
 	cacheTTL    = 45 * time.Second
 )
 
-var (
-	validRuntimes = map[string]bool{"node": true, "python": true, "go": true, "rust": true, "java": true, "dotnet": true, "ruby": true, "docker": true}
-	validStatuses = map[string]bool{"creating": true, "running": true, "stopped": true, "terminated": true, "error": true}
-)
+var validStatuses = map[string]bool{"pending": true, "in_progress": true, "completed": true, "failed": true}
 
-type sandbox struct {
-	ID              string  `json:"id"`
-	TenantID        string  `json:"tenant_id"`
-	SessionID       string  `json:"session_id"`
-	Runtime         string  `json:"runtime"`
-	Image           *string `json:"image,omitempty"`
-	CPULimit        string  `json:"cpu_limit"`
-	MemoryLimit     string  `json:"memory_limit"`
-	TimeoutSeconds  int     `json:"timeout_seconds"`
-	EnvironmentJSON *string `json:"environment_json,omitempty"`
-	VolumesJSON     *string `json:"volumes_json,omitempty"`
-	Status          string  `json:"status"`
-	ExitCode        *int    `json:"exit_code,omitempty"`
-	Output          *string `json:"output,omitempty"`
-	StartedAt       *string `json:"started_at,omitempty"`
-	StoppedAt       *string `json:"stopped_at,omitempty"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+type codeReview struct {
+	ID                string  `json:"id"`
+	TenantID          string  `json:"tenant_id"`
+	SessionID         *string `json:"session_id,omitempty"`
+	PRURL             *string `json:"pr_url,omitempty"`
+	RepositoryID      *string `json:"repository_id,omitempty"`
+	FilesJSON         *string `json:"files_json,omitempty"`
+	FindingsJSON      *string `json:"findings_json,omitempty"`
+	SeverityCountsJSON *string `json:"severity_counts_json,omitempty"`
+	OverallScore      int     `json:"overall_score"`
+	SecurityScore     int     `json:"security_score"`
+	QualityScore      int     `json:"quality_score"`
+	PerformanceScore  int     `json:"performance_score"`
+	ModelUsed         *string `json:"model_used,omitempty"`
+	Status            string  `json:"status"`
+	ReviewedAt        *string `json:"reviewed_at,omitempty"`
+	CreatedAt         string  `json:"created_at"`
+	UpdatedAt         string  `json:"updated_at"`
 }
 
 func newID() string {
@@ -91,17 +88,6 @@ func strPtr(v any) *string {
 	}
 	s := fmt.Sprintf("%v", v)
 	return &s
-}
-
-func intPtr(v any) *int {
-	if v == nil {
-		return nil
-	}
-	if f, ok := v.(float64); ok {
-		i := int(f)
-		return &i
-	}
-	return nil
 }
 
 func strVal(p *string) string {
@@ -184,53 +170,53 @@ func securityHeaders(next http.Handler) http.Handler {
 }
 
 type store interface {
-	List(ctx context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]sandbox, string, error)
-	GetByID(ctx context.Context, tenantID, id string) (*sandbox, error)
-	Create(ctx context.Context, s *sandbox) error
-	Update(ctx context.Context, s *sandbox) error
+	List(ctx context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]codeReview, string, error)
+	GetByID(ctx context.Context, tenantID, id string) (*codeReview, error)
+	Create(ctx context.Context, cr *codeReview) error
+	Update(ctx context.Context, cr *codeReview) error
 	Delete(ctx context.Context, tenantID, id string) error
 }
 
 type memoryStore struct {
 	mu      sync.RWMutex
-	records map[string]sandbox
+	records map[string]codeReview
 }
 
 func newMemoryStore() *memoryStore {
-	return &memoryStore{records: make(map[string]sandbox)}
+	return &memoryStore{records: make(map[string]codeReview)}
 }
 
-func (m *memoryStore) List(_ context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]sandbox, string, error) {
+func (m *memoryStore) List(_ context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]codeReview, string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var all []sandbox
-	for _, s := range m.records {
-		if s.TenantID != tenantID {
+	var all []codeReview
+	for _, cr := range m.records {
+		if cr.TenantID != tenantID {
 			continue
 		}
-		if v, ok := filters["runtime"]; ok && s.Runtime != v {
+		if v, ok := filters["repository_id"]; ok && strVal(cr.RepositoryID) != v {
 			continue
 		}
-		if v, ok := filters["status"]; ok && s.Status != v {
+		if v, ok := filters["status"]; ok && cr.Status != v {
 			continue
 		}
-		if v, ok := filters["session_id"]; ok && s.SessionID != v {
+		if v, ok := filters["session_id"]; ok && strVal(cr.SessionID) != v {
 			continue
 		}
-		all = append(all, s)
+		all = append(all, cr)
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt < all[j].CreatedAt })
 	start := 0
 	if cursor != "" {
-		for i, s := range all {
-			if s.ID == cursor {
+		for i, cr := range all {
+			if cr.ID == cursor {
 				start = i + 1
 				break
 			}
 		}
 	}
 	if start >= len(all) {
-		return []sandbox{}, "", nil
+		return []codeReview{}, "", nil
 	}
 	end := start + limit
 	if end > len(all) {
@@ -244,38 +230,38 @@ func (m *memoryStore) List(_ context.Context, tenantID, cursor string, limit int
 	return result, nextCursor, nil
 }
 
-func (m *memoryStore) GetByID(_ context.Context, tenantID, id string) (*sandbox, error) {
+func (m *memoryStore) GetByID(_ context.Context, tenantID, id string) (*codeReview, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	s, ok := m.records[id]
-	if !ok || s.TenantID != tenantID {
+	cr, ok := m.records[id]
+	if !ok || cr.TenantID != tenantID {
 		return nil, errors.New("not found")
 	}
-	return &s, nil
+	return &cr, nil
 }
 
-func (m *memoryStore) Create(_ context.Context, s *sandbox) error {
+func (m *memoryStore) Create(_ context.Context, cr *codeReview) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.records[s.ID] = *s
+	m.records[cr.ID] = *cr
 	return nil
 }
 
-func (m *memoryStore) Update(_ context.Context, s *sandbox) error {
+func (m *memoryStore) Update(_ context.Context, cr *codeReview) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.records[s.ID]; !ok {
+	if _, ok := m.records[cr.ID]; !ok {
 		return errors.New("not found")
 	}
-	m.records[s.ID] = *s
+	m.records[cr.ID] = *cr
 	return nil
 }
 
 func (m *memoryStore) Delete(_ context.Context, tenantID, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s, ok := m.records[id]
-	if !ok || s.TenantID != tenantID {
+	cr, ok := m.records[id]
+	if !ok || cr.TenantID != tenantID {
 		return errors.New("not found")
 	}
 	delete(m.records, id)
@@ -306,44 +292,51 @@ func newPostgresStore(dsn string) (*postgresStore, error) {
 const createTableSQL = `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
 	id TEXT PRIMARY KEY,
 	tenant_id TEXT NOT NULL,
-	session_id TEXT NOT NULL,
-	runtime TEXT CHECK (runtime IN ('node','python','go','rust','java','dotnet','ruby','docker')) NOT NULL,
-	image TEXT,
-	cpu_limit TEXT DEFAULT '1',
-	memory_limit TEXT DEFAULT '512Mi',
-	timeout_seconds INT DEFAULT 300,
-	environment_json TEXT,
-	volumes_json TEXT,
-	status TEXT CHECK (status IN ('creating','running','stopped','terminated','error')) DEFAULT 'creating',
-	exit_code INT,
-	output TEXT,
-	started_at TIMESTAMPTZ,
-	stopped_at TIMESTAMPTZ,
+	session_id TEXT,
+	pr_url TEXT,
+	repository_id TEXT,
+	files_json TEXT,
+	findings_json TEXT,
+	severity_counts_json TEXT,
+	overall_score INT DEFAULT 0,
+	security_score INT DEFAULT 0,
+	quality_score INT DEFAULT 0,
+	performance_score INT DEFAULT 0,
+	model_used TEXT,
+	status TEXT CHECK (status IN ('pending','in_progress','completed','failed')) DEFAULT 'pending',
+	reviewed_at TIMESTAMPTZ,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_` + tableName + `_tenant ON ` + tableName + ` (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_` + tableName + `_runtime ON ` + tableName + ` (tenant_id, runtime);
+CREATE INDEX IF NOT EXISTS idx_` + tableName + `_repo ON ` + tableName + ` (tenant_id, repository_id);
 CREATE INDEX IF NOT EXISTS idx_` + tableName + `_status ON ` + tableName + ` (tenant_id, status);`
 
-func (p *postgresStore) List(ctx context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]sandbox, string, error) {
-	query := `SELECT id,tenant_id,session_id,runtime,image,cpu_limit,memory_limit,timeout_seconds,
-		environment_json,volumes_json,status,exit_code,output,started_at,stopped_at,created_at,updated_at
-		FROM ` + tableName + ` WHERE tenant_id=$1`
+func (p *postgresStore) List(ctx context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]codeReview, string, error) {
+	query := `SELECT id,tenant_id,session_id,pr_url,repository_id,files_json,findings_json,
+		severity_counts_json,overall_score,security_score,quality_score,performance_score,
+		model_used,status,reviewed_at,created_at,updated_at FROM ` + tableName + ` WHERE tenant_id=$1`
 	args := []any{tenantID}
 	argIdx := 2
-	if v, ok := filters["runtime"]; ok {
-		query += fmt.Sprintf(" AND runtime=$%d", argIdx); args = append(args, v); argIdx++
+	if v, ok := filters["repository_id"]; ok {
+		query += fmt.Sprintf(" AND repository_id=$%d", argIdx)
+		args = append(args, v)
+		argIdx++
 	}
 	if v, ok := filters["status"]; ok {
-		query += fmt.Sprintf(" AND status=$%d", argIdx); args = append(args, v); argIdx++
+		query += fmt.Sprintf(" AND status=$%d", argIdx)
+		args = append(args, v)
+		argIdx++
 	}
 	if v, ok := filters["session_id"]; ok {
-		query += fmt.Sprintf(" AND session_id=$%d", argIdx); args = append(args, v); argIdx++
+		query += fmt.Sprintf(" AND session_id=$%d", argIdx)
+		args = append(args, v)
+		argIdx++
 	}
 	if cursor != "" {
 		query += fmt.Sprintf(" AND created_at>(SELECT created_at FROM "+tableName+" WHERE id=$%d)", argIdx)
-		args = append(args, cursor); argIdx++
+		args = append(args, cursor)
+		argIdx++
 	}
 	query += " ORDER BY created_at ASC"
 	query += fmt.Sprintf(" LIMIT $%d", argIdx)
@@ -353,27 +346,27 @@ func (p *postgresStore) List(ctx context.Context, tenantID, cursor string, limit
 		return nil, "", fmt.Errorf("query: %w", err)
 	}
 	defer rows.Close()
-	var results []sandbox
+	var results []codeReview
 	for rows.Next() {
-		var s sandbox
-		var ca, ua, sa, sta sql.NullTime
-		var img, ej, vj, out sql.NullString
-		var ec sql.NullInt64
-		if err := rows.Scan(&s.ID, &s.TenantID, &s.SessionID, &s.Runtime, &img, &s.CPULimit,
-			&s.MemoryLimit, &s.TimeoutSeconds, &ej, &vj, &s.Status, &ec, &out,
-			&sa, &sta, &ca, &ua); err != nil {
+		var cr codeReview
+		var ca, ua, ra sql.NullTime
+		var sid, prurl, rid, fj, findj, scj, mu sql.NullString
+		if err := rows.Scan(&cr.ID, &cr.TenantID, &sid, &prurl, &rid, &fj, &findj, &scj,
+			&cr.OverallScore, &cr.SecurityScore, &cr.QualityScore, &cr.PerformanceScore,
+			&mu, &cr.Status, &ra, &ca, &ua); err != nil {
 			return nil, "", fmt.Errorf("scan: %w", err)
 		}
-		if img.Valid { s.Image = &img.String }
-		if ej.Valid { s.EnvironmentJSON = &ej.String }
-		if vj.Valid { s.VolumesJSON = &vj.String }
-		if ec.Valid { v := int(ec.Int64); s.ExitCode = &v }
-		if out.Valid { s.Output = &out.String }
-		if sa.Valid { v := sa.Time.Format(time.RFC3339); s.StartedAt = &v }
-		if sta.Valid { v := sta.Time.Format(time.RFC3339); s.StoppedAt = &v }
-		if ca.Valid { s.CreatedAt = ca.Time.Format(time.RFC3339) }
-		if ua.Valid { s.UpdatedAt = ua.Time.Format(time.RFC3339) }
-		results = append(results, s)
+		if sid.Valid { cr.SessionID = &sid.String }
+		if prurl.Valid { cr.PRURL = &prurl.String }
+		if rid.Valid { cr.RepositoryID = &rid.String }
+		if fj.Valid { cr.FilesJSON = &fj.String }
+		if findj.Valid { cr.FindingsJSON = &findj.String }
+		if scj.Valid { cr.SeverityCountsJSON = &scj.String }
+		if mu.Valid { cr.ModelUsed = &mu.String }
+		if ra.Valid { v := ra.Time.Format(time.RFC3339); cr.ReviewedAt = &v }
+		if ca.Valid { cr.CreatedAt = ca.Time.Format(time.RFC3339) }
+		if ua.Valid { cr.UpdatedAt = ua.Time.Format(time.RFC3339) }
+		results = append(results, cr)
 	}
 	nextCursor := ""
 	if len(results) > limit {
@@ -383,54 +376,54 @@ func (p *postgresStore) List(ctx context.Context, tenantID, cursor string, limit
 	return results, nextCursor, nil
 }
 
-func (p *postgresStore) GetByID(ctx context.Context, tenantID, id string) (*sandbox, error) {
-	query := `SELECT id,tenant_id,session_id,runtime,image,cpu_limit,memory_limit,timeout_seconds,
-		environment_json,volumes_json,status,exit_code,output,started_at,stopped_at,created_at,updated_at
-		FROM ` + tableName + ` WHERE id=$1 AND tenant_id=$2`
-	var s sandbox
-	var ca, ua, sa, sta sql.NullTime
-	var img, ej, vj, out sql.NullString
-	var ec sql.NullInt64
-	err := p.db.QueryRowContext(ctx, query, id, tenantID).Scan(&s.ID, &s.TenantID, &s.SessionID,
-		&s.Runtime, &img, &s.CPULimit, &s.MemoryLimit, &s.TimeoutSeconds, &ej, &vj,
-		&s.Status, &ec, &out, &sa, &sta, &ca, &ua)
+func (p *postgresStore) GetByID(ctx context.Context, tenantID, id string) (*codeReview, error) {
+	query := `SELECT id,tenant_id,session_id,pr_url,repository_id,files_json,findings_json,
+		severity_counts_json,overall_score,security_score,quality_score,performance_score,
+		model_used,status,reviewed_at,created_at,updated_at FROM ` + tableName + ` WHERE id=$1 AND tenant_id=$2`
+	var cr codeReview
+	var ca, ua, ra sql.NullTime
+	var sid, prurl, rid, fj, findj, scj, mu sql.NullString
+	err := p.db.QueryRowContext(ctx, query, id, tenantID).Scan(&cr.ID, &cr.TenantID, &sid, &prurl, &rid, &fj, &findj, &scj,
+		&cr.OverallScore, &cr.SecurityScore, &cr.QualityScore, &cr.PerformanceScore,
+		&mu, &cr.Status, &ra, &ca, &ua)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) { return nil, errors.New("not found") }
 		return nil, fmt.Errorf("query row: %w", err)
 	}
-	if img.Valid { s.Image = &img.String }
-	if ej.Valid { s.EnvironmentJSON = &ej.String }
-	if vj.Valid { s.VolumesJSON = &vj.String }
-	if ec.Valid { v := int(ec.Int64); s.ExitCode = &v }
-	if out.Valid { s.Output = &out.String }
-	if sa.Valid { v := sa.Time.Format(time.RFC3339); s.StartedAt = &v }
-	if sta.Valid { v := sta.Time.Format(time.RFC3339); s.StoppedAt = &v }
-	if ca.Valid { s.CreatedAt = ca.Time.Format(time.RFC3339) }
-	if ua.Valid { s.UpdatedAt = ua.Time.Format(time.RFC3339) }
-	return &s, nil
+	if sid.Valid { cr.SessionID = &sid.String }
+	if prurl.Valid { cr.PRURL = &prurl.String }
+	if rid.Valid { cr.RepositoryID = &rid.String }
+	if fj.Valid { cr.FilesJSON = &fj.String }
+	if findj.Valid { cr.FindingsJSON = &findj.String }
+	if scj.Valid { cr.SeverityCountsJSON = &scj.String }
+	if mu.Valid { cr.ModelUsed = &mu.String }
+	if ra.Valid { v := ra.Time.Format(time.RFC3339); cr.ReviewedAt = &v }
+	if ca.Valid { cr.CreatedAt = ca.Time.Format(time.RFC3339) }
+	if ua.Valid { cr.UpdatedAt = ua.Time.Format(time.RFC3339) }
+	return &cr, nil
 }
 
-func (p *postgresStore) Create(ctx context.Context, s *sandbox) error {
-	query := `INSERT INTO ` + tableName + ` (id,tenant_id,session_id,runtime,image,cpu_limit,
-		memory_limit,timeout_seconds,environment_json,volumes_json,status,exit_code,output,
-		started_at,stopped_at,created_at,updated_at)
+func (p *postgresStore) Create(ctx context.Context, cr *codeReview) error {
+	query := `INSERT INTO ` + tableName + ` (id,tenant_id,session_id,pr_url,repository_id,files_json,
+		findings_json,severity_counts_json,overall_score,security_score,quality_score,
+		performance_score,model_used,status,reviewed_at,created_at,updated_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`
-	_, err := p.db.ExecContext(ctx, query, s.ID, s.TenantID, s.SessionID, s.Runtime, s.Image,
-		s.CPULimit, s.MemoryLimit, s.TimeoutSeconds, s.EnvironmentJSON, s.VolumesJSON,
-		s.Status, s.ExitCode, s.Output, parseTimePtr(s.StartedAt), parseTimePtr(s.StoppedAt),
-		parseTime(s.CreatedAt), parseTime(s.UpdatedAt))
+	_, err := p.db.ExecContext(ctx, query, cr.ID, cr.TenantID, cr.SessionID, cr.PRURL, cr.RepositoryID,
+		cr.FilesJSON, cr.FindingsJSON, cr.SeverityCountsJSON, cr.OverallScore, cr.SecurityScore,
+		cr.QualityScore, cr.PerformanceScore, cr.ModelUsed, cr.Status,
+		parseTimePtr(cr.ReviewedAt), parseTime(cr.CreatedAt), parseTime(cr.UpdatedAt))
 	return err
 }
 
-func (p *postgresStore) Update(ctx context.Context, s *sandbox) error {
-	query := `UPDATE ` + tableName + ` SET session_id=$1,runtime=$2,image=$3,cpu_limit=$4,
-		memory_limit=$5,timeout_seconds=$6,environment_json=$7,volumes_json=$8,status=$9,
-		exit_code=$10,output=$11,started_at=$12,stopped_at=$13,updated_at=$14
-		WHERE id=$15 AND tenant_id=$16`
-	res, err := p.db.ExecContext(ctx, query, s.SessionID, s.Runtime, s.Image, s.CPULimit,
-		s.MemoryLimit, s.TimeoutSeconds, s.EnvironmentJSON, s.VolumesJSON, s.Status,
-		s.ExitCode, s.Output, parseTimePtr(s.StartedAt), parseTimePtr(s.StoppedAt),
-		parseTime(s.UpdatedAt), s.ID, s.TenantID)
+func (p *postgresStore) Update(ctx context.Context, cr *codeReview) error {
+	query := `UPDATE ` + tableName + ` SET session_id=$1,pr_url=$2,repository_id=$3,files_json=$4,
+		findings_json=$5,severity_counts_json=$6,overall_score=$7,security_score=$8,
+		quality_score=$9,performance_score=$10,model_used=$11,status=$12,reviewed_at=$13,
+		updated_at=$14 WHERE id=$15 AND tenant_id=$16`
+	res, err := p.db.ExecContext(ctx, query, cr.SessionID, cr.PRURL, cr.RepositoryID, cr.FilesJSON,
+		cr.FindingsJSON, cr.SeverityCountsJSON, cr.OverallScore, cr.SecurityScore,
+		cr.QualityScore, cr.PerformanceScore, cr.ModelUsed, cr.Status,
+		parseTimePtr(cr.ReviewedAt), parseTime(cr.UpdatedAt), cr.ID, cr.TenantID)
 	if err != nil { return err }
 	n, _ := res.RowsAffected()
 	if n == 0 { return errors.New("not found") }
@@ -469,7 +462,7 @@ func (sv *server) handleList(w http.ResponseWriter, r *http.Request) {
 	limit := 20
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 100 { limit = v }
 	filters := make(map[string]string)
-	for _, key := range []string{"runtime", "status", "session_id"} {
+	for _, key := range []string{"repository_id", "status", "session_id"} {
 		if v := r.URL.Query().Get(key); v != "" { filters[key] = v }
 	}
 	cacheKey := fmt.Sprintf("list:%s:%s:%d:%v", tenantID, cursor, limit, filters)
@@ -499,32 +492,26 @@ func (sv *server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.Header.Get("X-Tenant-ID")
 	body, err := readJSON(r)
 	if err != nil { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()}); return }
-	sessionID, _ := body["session_id"].(string)
-	if sessionID == "" { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session_id is required"}); return }
-	runtime, _ := body["runtime"].(string)
-	if !validRuntimes[runtime] {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "runtime is required and must be one of: node, python, go, rust, java, dotnet, ruby, docker"}); return
-	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	s := &sandbox{
-		ID: newID(), TenantID: tenantID, SessionID: sessionID, Runtime: runtime,
-		Image: strPtr(body["image"]), CPULimit: "1", MemoryLimit: "512Mi", TimeoutSeconds: 300,
-		EnvironmentJSON: strPtr(body["environment_json"]), VolumesJSON: strPtr(body["volumes_json"]),
-		Status: "creating", CreatedAt: now, UpdatedAt: now,
+	cr := &codeReview{
+		ID: newID(), TenantID: tenantID, SessionID: strPtr(body["session_id"]),
+		PRURL: strPtr(body["pr_url"]), RepositoryID: strPtr(body["repository_id"]),
+		FilesJSON: strPtr(body["files_json"]), FindingsJSON: strPtr(body["findings_json"]),
+		SeverityCountsJSON: strPtr(body["severity_counts_json"]),
+		OverallScore: 0, SecurityScore: 0, QualityScore: 0, PerformanceScore: 0,
+		ModelUsed: strPtr(body["model_used"]), Status: "pending", CreatedAt: now, UpdatedAt: now,
 	}
-	if v, ok := body["cpu_limit"].(string); ok && v != "" { s.CPULimit = v }
-	if v, ok := body["memory_limit"].(string); ok && v != "" { s.MemoryLimit = v }
-	if v, ok := body["timeout_seconds"].(float64); ok { s.TimeoutSeconds = int(v) }
-	if v, ok := body["status"].(string); ok && validStatuses[v] { s.Status = v }
-	s.ExitCode = intPtr(body["exit_code"])
-	s.Output = strPtr(body["output"])
-	if v, ok := body["started_at"].(string); ok { s.StartedAt = &v }
-	if v, ok := body["stopped_at"].(string); ok { s.StoppedAt = &v }
-	if err := sv.store.Create(r.Context(), s); err != nil {
+	if v, ok := body["overall_score"].(float64); ok { cr.OverallScore = int(v) }
+	if v, ok := body["security_score"].(float64); ok { cr.SecurityScore = int(v) }
+	if v, ok := body["quality_score"].(float64); ok { cr.QualityScore = int(v) }
+	if v, ok := body["performance_score"].(float64); ok { cr.PerformanceScore = int(v) }
+	if v, ok := body["status"].(string); ok && validStatuses[v] { cr.Status = v }
+	if v, ok := body["reviewed_at"].(string); ok { cr.ReviewedAt = &v }
+	if err := sv.store.Create(r.Context(), cr); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()}); return
 	}
 	sv.cache.invalidate("list:" + tenantID)
-	writeJSON(w, http.StatusCreated, map[string]any{"item": s, "event_topic": eventTopic + ".created"})
+	writeJSON(w, http.StatusCreated, map[string]any{"item": cr, "event_topic": eventTopic + ".created"})
 }
 
 func (sv *server) handleUpdate(w http.ResponseWriter, r *http.Request, id string) {
@@ -536,19 +523,19 @@ func (sv *server) handleUpdate(w http.ResponseWriter, r *http.Request, id string
 	}
 	body, err := readJSON(r)
 	if err != nil { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()}); return }
-	if v, ok := body["session_id"].(string); ok && v != "" { existing.SessionID = v }
-	if v, ok := body["runtime"].(string); ok && validRuntimes[v] { existing.Runtime = v }
-	if v, exists := body["image"]; exists { existing.Image = strPtr(v) }
-	if v, ok := body["cpu_limit"].(string); ok && v != "" { existing.CPULimit = v }
-	if v, ok := body["memory_limit"].(string); ok && v != "" { existing.MemoryLimit = v }
-	if v, ok := body["timeout_seconds"].(float64); ok { existing.TimeoutSeconds = int(v) }
-	if v, exists := body["environment_json"]; exists { existing.EnvironmentJSON = strPtr(v) }
-	if v, exists := body["volumes_json"]; exists { existing.VolumesJSON = strPtr(v) }
+	if v, exists := body["session_id"]; exists { existing.SessionID = strPtr(v) }
+	if v, exists := body["pr_url"]; exists { existing.PRURL = strPtr(v) }
+	if v, exists := body["repository_id"]; exists { existing.RepositoryID = strPtr(v) }
+	if v, exists := body["files_json"]; exists { existing.FilesJSON = strPtr(v) }
+	if v, exists := body["findings_json"]; exists { existing.FindingsJSON = strPtr(v) }
+	if v, exists := body["severity_counts_json"]; exists { existing.SeverityCountsJSON = strPtr(v) }
+	if v, ok := body["overall_score"].(float64); ok { existing.OverallScore = int(v) }
+	if v, ok := body["security_score"].(float64); ok { existing.SecurityScore = int(v) }
+	if v, ok := body["quality_score"].(float64); ok { existing.QualityScore = int(v) }
+	if v, ok := body["performance_score"].(float64); ok { existing.PerformanceScore = int(v) }
+	if v, exists := body["model_used"]; exists { existing.ModelUsed = strPtr(v) }
 	if v, ok := body["status"].(string); ok && validStatuses[v] { existing.Status = v }
-	if _, exists := body["exit_code"]; exists { existing.ExitCode = intPtr(body["exit_code"]) }
-	if v, exists := body["output"]; exists { existing.Output = strPtr(v) }
-	if v, ok := body["started_at"].(string); ok { existing.StartedAt = &v }
-	if v, ok := body["stopped_at"].(string); ok { existing.StoppedAt = &v }
+	if v, ok := body["reviewed_at"].(string); ok { existing.ReviewedAt = &v }
 	existing.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if err := sv.store.Update(r.Context(), existing); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()}); return
@@ -572,11 +559,12 @@ func (sv *server) handleDelete(w http.ResponseWriter, r *http.Request, id string
 func handleExplain(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"service": serviceName, "module": moduleName, "base_path": basePath,
-		"database": dbName, "table": tableName, "event_topic": eventTopic, "entity": "sandbox",
-		"fields": []string{"id", "tenant_id", "session_id", "runtime", "image", "cpu_limit",
-			"memory_limit", "timeout_seconds", "environment_json", "volumes_json", "status",
-			"exit_code", "output", "started_at", "stopped_at", "created_at", "updated_at"},
-		"filters": []string{"runtime", "status", "session_id"}, "pagination": "cursor-based",
+		"database": dbName, "table": tableName, "event_topic": eventTopic, "entity": "codeReview",
+		"fields": []string{"id", "tenant_id", "session_id", "pr_url", "repository_id", "files_json",
+			"findings_json", "severity_counts_json", "overall_score", "security_score",
+			"quality_score", "performance_score", "model_used", "status", "reviewed_at",
+			"created_at", "updated_at"},
+		"filters": []string{"repository_id", "status", "session_id"}, "pagination": "cursor-based",
 		"cache_ttl": cacheTTL.String(),
 		"endpoints": map[string]string{
 			"list": "GET " + basePath, "get": "GET " + basePath + "/{id}",
@@ -615,7 +603,9 @@ func main() {
 	mux.HandleFunc(basePath+"/_explain", handleExplain)
 	mux.HandleFunc(basePath, func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Add(1)
-		if r.Header.Get("X-Tenant-ID") == "" { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing X-Tenant-ID header"}); return }
+		if r.Header.Get("X-Tenant-ID") == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing X-Tenant-ID header"}); return
+		}
 		switch r.Method {
 		case http.MethodGet: srv.handleList(w, r)
 		case http.MethodPost: srv.handleCreate(w, r)
@@ -624,7 +614,9 @@ func main() {
 	})
 	mux.HandleFunc(basePath+"/", func(w http.ResponseWriter, r *http.Request) {
 		requestCount.Add(1)
-		if r.Header.Get("X-Tenant-ID") == "" { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing X-Tenant-ID header"}); return }
+		if r.Header.Get("X-Tenant-ID") == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing X-Tenant-ID header"}); return
+		}
 		id := strings.TrimPrefix(r.URL.Path, basePath+"/")
 		if id == "" { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing id"}); return }
 		switch r.Method {

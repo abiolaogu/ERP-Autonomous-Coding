@@ -23,38 +23,35 @@ import (
 )
 
 const (
-	serviceName = "sandbox-runtime"
+	serviceName = "task-planner"
 	moduleName  = "ERP-Autonomous-Coding"
-	basePath    = "/v1/sandboxes"
+	basePath    = "/v1/coding-plans"
 	dbName      = "erp_coding"
-	tableName   = "coding_sandboxes"
-	eventTopic  = "erp.coding.sandbox"
+	tableName   = "coding_plans"
+	eventTopic  = "erp.coding.plan"
 	cacheTTL    = 45 * time.Second
 )
 
-var (
-	validRuntimes = map[string]bool{"node": true, "python": true, "go": true, "rust": true, "java": true, "dotnet": true, "ruby": true, "docker": true}
-	validStatuses = map[string]bool{"creating": true, "running": true, "stopped": true, "terminated": true, "error": true}
-)
+var validStatuses = map[string]bool{"draft": true, "planning": true, "ready": true, "in_progress": true, "completed": true, "abandoned": true}
 
-type sandbox struct {
-	ID              string  `json:"id"`
-	TenantID        string  `json:"tenant_id"`
-	SessionID       string  `json:"session_id"`
-	Runtime         string  `json:"runtime"`
-	Image           *string `json:"image,omitempty"`
-	CPULimit        string  `json:"cpu_limit"`
-	MemoryLimit     string  `json:"memory_limit"`
-	TimeoutSeconds  int     `json:"timeout_seconds"`
-	EnvironmentJSON *string `json:"environment_json,omitempty"`
-	VolumesJSON     *string `json:"volumes_json,omitempty"`
-	Status          string  `json:"status"`
-	ExitCode        *int    `json:"exit_code,omitempty"`
-	Output          *string `json:"output,omitempty"`
-	StartedAt       *string `json:"started_at,omitempty"`
-	StoppedAt       *string `json:"stopped_at,omitempty"`
-	CreatedAt       string  `json:"created_at"`
-	UpdatedAt       string  `json:"updated_at"`
+type codingPlan struct {
+	ID               string  `json:"id"`
+	TenantID         string  `json:"tenant_id"`
+	UserID           string  `json:"user_id"`
+	Title            string  `json:"title"`
+	Description      *string `json:"description,omitempty"`
+	RequirementsJSON *string `json:"requirements_json,omitempty"`
+	StepsJSON        *string `json:"steps_json,omitempty"`
+	DependenciesJSON *string `json:"dependencies_json,omitempty"`
+	EstimatedEffort  *string `json:"estimated_effort,omitempty"`
+	Language         *string `json:"language,omitempty"`
+	Framework        *string `json:"framework,omitempty"`
+	TotalSteps       int     `json:"total_steps"`
+	CompletedSteps   int     `json:"completed_steps"`
+	Status           string  `json:"status"`
+	ModelUsed        *string `json:"model_used,omitempty"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
 }
 
 func newID() string {
@@ -91,17 +88,6 @@ func strPtr(v any) *string {
 	}
 	s := fmt.Sprintf("%v", v)
 	return &s
-}
-
-func intPtr(v any) *int {
-	if v == nil {
-		return nil
-	}
-	if f, ok := v.(float64); ok {
-		i := int(f)
-		return &i
-	}
-	return nil
 }
 
 func strVal(p *string) string {
@@ -184,53 +170,53 @@ func securityHeaders(next http.Handler) http.Handler {
 }
 
 type store interface {
-	List(ctx context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]sandbox, string, error)
-	GetByID(ctx context.Context, tenantID, id string) (*sandbox, error)
-	Create(ctx context.Context, s *sandbox) error
-	Update(ctx context.Context, s *sandbox) error
+	List(ctx context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]codingPlan, string, error)
+	GetByID(ctx context.Context, tenantID, id string) (*codingPlan, error)
+	Create(ctx context.Context, p *codingPlan) error
+	Update(ctx context.Context, p *codingPlan) error
 	Delete(ctx context.Context, tenantID, id string) error
 }
 
 type memoryStore struct {
 	mu      sync.RWMutex
-	records map[string]sandbox
+	records map[string]codingPlan
 }
 
 func newMemoryStore() *memoryStore {
-	return &memoryStore{records: make(map[string]sandbox)}
+	return &memoryStore{records: make(map[string]codingPlan)}
 }
 
-func (m *memoryStore) List(_ context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]sandbox, string, error) {
+func (m *memoryStore) List(_ context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]codingPlan, string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var all []sandbox
-	for _, s := range m.records {
-		if s.TenantID != tenantID {
+	var all []codingPlan
+	for _, p := range m.records {
+		if p.TenantID != tenantID {
 			continue
 		}
-		if v, ok := filters["runtime"]; ok && s.Runtime != v {
+		if v, ok := filters["user_id"]; ok && p.UserID != v {
 			continue
 		}
-		if v, ok := filters["status"]; ok && s.Status != v {
+		if v, ok := filters["status"]; ok && p.Status != v {
 			continue
 		}
-		if v, ok := filters["session_id"]; ok && s.SessionID != v {
+		if v, ok := filters["language"]; ok && strVal(p.Language) != v {
 			continue
 		}
-		all = append(all, s)
+		all = append(all, p)
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt < all[j].CreatedAt })
 	start := 0
 	if cursor != "" {
-		for i, s := range all {
-			if s.ID == cursor {
+		for i, p := range all {
+			if p.ID == cursor {
 				start = i + 1
 				break
 			}
 		}
 	}
 	if start >= len(all) {
-		return []sandbox{}, "", nil
+		return []codingPlan{}, "", nil
 	}
 	end := start + limit
 	if end > len(all) {
@@ -244,38 +230,38 @@ func (m *memoryStore) List(_ context.Context, tenantID, cursor string, limit int
 	return result, nextCursor, nil
 }
 
-func (m *memoryStore) GetByID(_ context.Context, tenantID, id string) (*sandbox, error) {
+func (m *memoryStore) GetByID(_ context.Context, tenantID, id string) (*codingPlan, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	s, ok := m.records[id]
-	if !ok || s.TenantID != tenantID {
+	p, ok := m.records[id]
+	if !ok || p.TenantID != tenantID {
 		return nil, errors.New("not found")
 	}
-	return &s, nil
+	return &p, nil
 }
 
-func (m *memoryStore) Create(_ context.Context, s *sandbox) error {
+func (m *memoryStore) Create(_ context.Context, p *codingPlan) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.records[s.ID] = *s
+	m.records[p.ID] = *p
 	return nil
 }
 
-func (m *memoryStore) Update(_ context.Context, s *sandbox) error {
+func (m *memoryStore) Update(_ context.Context, p *codingPlan) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.records[s.ID]; !ok {
+	if _, ok := m.records[p.ID]; !ok {
 		return errors.New("not found")
 	}
-	m.records[s.ID] = *s
+	m.records[p.ID] = *p
 	return nil
 }
 
 func (m *memoryStore) Delete(_ context.Context, tenantID, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s, ok := m.records[id]
-	if !ok || s.TenantID != tenantID {
+	p, ok := m.records[id]
+	if !ok || p.TenantID != tenantID {
 		return errors.New("not found")
 	}
 	delete(m.records, id)
@@ -306,40 +292,40 @@ func newPostgresStore(dsn string) (*postgresStore, error) {
 const createTableSQL = `CREATE TABLE IF NOT EXISTS ` + tableName + ` (
 	id TEXT PRIMARY KEY,
 	tenant_id TEXT NOT NULL,
-	session_id TEXT NOT NULL,
-	runtime TEXT CHECK (runtime IN ('node','python','go','rust','java','dotnet','ruby','docker')) NOT NULL,
-	image TEXT,
-	cpu_limit TEXT DEFAULT '1',
-	memory_limit TEXT DEFAULT '512Mi',
-	timeout_seconds INT DEFAULT 300,
-	environment_json TEXT,
-	volumes_json TEXT,
-	status TEXT CHECK (status IN ('creating','running','stopped','terminated','error')) DEFAULT 'creating',
-	exit_code INT,
-	output TEXT,
-	started_at TIMESTAMPTZ,
-	stopped_at TIMESTAMPTZ,
+	user_id TEXT NOT NULL,
+	title TEXT NOT NULL,
+	description TEXT,
+	requirements_json TEXT,
+	steps_json TEXT,
+	dependencies_json TEXT,
+	estimated_effort TEXT,
+	language TEXT,
+	framework TEXT,
+	total_steps INT DEFAULT 0,
+	completed_steps INT DEFAULT 0,
+	status TEXT CHECK (status IN ('draft','planning','ready','in_progress','completed','abandoned')) DEFAULT 'draft',
+	model_used TEXT,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_` + tableName + `_tenant ON ` + tableName + ` (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_` + tableName + `_runtime ON ` + tableName + ` (tenant_id, runtime);
+CREATE INDEX IF NOT EXISTS idx_` + tableName + `_user ON ` + tableName + ` (tenant_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_` + tableName + `_status ON ` + tableName + ` (tenant_id, status);`
 
-func (p *postgresStore) List(ctx context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]sandbox, string, error) {
-	query := `SELECT id,tenant_id,session_id,runtime,image,cpu_limit,memory_limit,timeout_seconds,
-		environment_json,volumes_json,status,exit_code,output,started_at,stopped_at,created_at,updated_at
-		FROM ` + tableName + ` WHERE tenant_id=$1`
+func (p *postgresStore) List(ctx context.Context, tenantID, cursor string, limit int, filters map[string]string) ([]codingPlan, string, error) {
+	query := `SELECT id,tenant_id,user_id,title,description,requirements_json,steps_json,
+		dependencies_json,estimated_effort,language,framework,total_steps,completed_steps,
+		status,model_used,created_at,updated_at FROM ` + tableName + ` WHERE tenant_id=$1`
 	args := []any{tenantID}
 	argIdx := 2
-	if v, ok := filters["runtime"]; ok {
-		query += fmt.Sprintf(" AND runtime=$%d", argIdx); args = append(args, v); argIdx++
+	if v, ok := filters["user_id"]; ok {
+		query += fmt.Sprintf(" AND user_id=$%d", argIdx); args = append(args, v); argIdx++
 	}
 	if v, ok := filters["status"]; ok {
 		query += fmt.Sprintf(" AND status=$%d", argIdx); args = append(args, v); argIdx++
 	}
-	if v, ok := filters["session_id"]; ok {
-		query += fmt.Sprintf(" AND session_id=$%d", argIdx); args = append(args, v); argIdx++
+	if v, ok := filters["language"]; ok {
+		query += fmt.Sprintf(" AND language=$%d", argIdx); args = append(args, v); argIdx++
 	}
 	if cursor != "" {
 		query += fmt.Sprintf(" AND created_at>(SELECT created_at FROM "+tableName+" WHERE id=$%d)", argIdx)
@@ -353,27 +339,26 @@ func (p *postgresStore) List(ctx context.Context, tenantID, cursor string, limit
 		return nil, "", fmt.Errorf("query: %w", err)
 	}
 	defer rows.Close()
-	var results []sandbox
+	var results []codingPlan
 	for rows.Next() {
-		var s sandbox
-		var ca, ua, sa, sta sql.NullTime
-		var img, ej, vj, out sql.NullString
-		var ec sql.NullInt64
-		if err := rows.Scan(&s.ID, &s.TenantID, &s.SessionID, &s.Runtime, &img, &s.CPULimit,
-			&s.MemoryLimit, &s.TimeoutSeconds, &ej, &vj, &s.Status, &ec, &out,
-			&sa, &sta, &ca, &ua); err != nil {
+		var pl codingPlan
+		var ca, ua sql.NullTime
+		var desc, rj, sj, dj, ee, lang, fw, mu sql.NullString
+		if err := rows.Scan(&pl.ID, &pl.TenantID, &pl.UserID, &pl.Title, &desc, &rj, &sj, &dj,
+			&ee, &lang, &fw, &pl.TotalSteps, &pl.CompletedSteps, &pl.Status, &mu, &ca, &ua); err != nil {
 			return nil, "", fmt.Errorf("scan: %w", err)
 		}
-		if img.Valid { s.Image = &img.String }
-		if ej.Valid { s.EnvironmentJSON = &ej.String }
-		if vj.Valid { s.VolumesJSON = &vj.String }
-		if ec.Valid { v := int(ec.Int64); s.ExitCode = &v }
-		if out.Valid { s.Output = &out.String }
-		if sa.Valid { v := sa.Time.Format(time.RFC3339); s.StartedAt = &v }
-		if sta.Valid { v := sta.Time.Format(time.RFC3339); s.StoppedAt = &v }
-		if ca.Valid { s.CreatedAt = ca.Time.Format(time.RFC3339) }
-		if ua.Valid { s.UpdatedAt = ua.Time.Format(time.RFC3339) }
-		results = append(results, s)
+		if desc.Valid { pl.Description = &desc.String }
+		if rj.Valid { pl.RequirementsJSON = &rj.String }
+		if sj.Valid { pl.StepsJSON = &sj.String }
+		if dj.Valid { pl.DependenciesJSON = &dj.String }
+		if ee.Valid { pl.EstimatedEffort = &ee.String }
+		if lang.Valid { pl.Language = &lang.String }
+		if fw.Valid { pl.Framework = &fw.String }
+		if mu.Valid { pl.ModelUsed = &mu.String }
+		if ca.Valid { pl.CreatedAt = ca.Time.Format(time.RFC3339) }
+		if ua.Valid { pl.UpdatedAt = ua.Time.Format(time.RFC3339) }
+		results = append(results, pl)
 	}
 	nextCursor := ""
 	if len(results) > limit {
@@ -383,54 +368,54 @@ func (p *postgresStore) List(ctx context.Context, tenantID, cursor string, limit
 	return results, nextCursor, nil
 }
 
-func (p *postgresStore) GetByID(ctx context.Context, tenantID, id string) (*sandbox, error) {
-	query := `SELECT id,tenant_id,session_id,runtime,image,cpu_limit,memory_limit,timeout_seconds,
-		environment_json,volumes_json,status,exit_code,output,started_at,stopped_at,created_at,updated_at
-		FROM ` + tableName + ` WHERE id=$1 AND tenant_id=$2`
-	var s sandbox
-	var ca, ua, sa, sta sql.NullTime
-	var img, ej, vj, out sql.NullString
-	var ec sql.NullInt64
-	err := p.db.QueryRowContext(ctx, query, id, tenantID).Scan(&s.ID, &s.TenantID, &s.SessionID,
-		&s.Runtime, &img, &s.CPULimit, &s.MemoryLimit, &s.TimeoutSeconds, &ej, &vj,
-		&s.Status, &ec, &out, &sa, &sta, &ca, &ua)
+func (p *postgresStore) GetByID(ctx context.Context, tenantID, id string) (*codingPlan, error) {
+	query := `SELECT id,tenant_id,user_id,title,description,requirements_json,steps_json,
+		dependencies_json,estimated_effort,language,framework,total_steps,completed_steps,
+		status,model_used,created_at,updated_at FROM ` + tableName + ` WHERE id=$1 AND tenant_id=$2`
+	var pl codingPlan
+	var ca, ua sql.NullTime
+	var desc, rj, sj, dj, ee, lang, fw, mu sql.NullString
+	err := p.db.QueryRowContext(ctx, query, id, tenantID).Scan(&pl.ID, &pl.TenantID, &pl.UserID,
+		&pl.Title, &desc, &rj, &sj, &dj, &ee, &lang, &fw, &pl.TotalSteps, &pl.CompletedSteps,
+		&pl.Status, &mu, &ca, &ua)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) { return nil, errors.New("not found") }
 		return nil, fmt.Errorf("query row: %w", err)
 	}
-	if img.Valid { s.Image = &img.String }
-	if ej.Valid { s.EnvironmentJSON = &ej.String }
-	if vj.Valid { s.VolumesJSON = &vj.String }
-	if ec.Valid { v := int(ec.Int64); s.ExitCode = &v }
-	if out.Valid { s.Output = &out.String }
-	if sa.Valid { v := sa.Time.Format(time.RFC3339); s.StartedAt = &v }
-	if sta.Valid { v := sta.Time.Format(time.RFC3339); s.StoppedAt = &v }
-	if ca.Valid { s.CreatedAt = ca.Time.Format(time.RFC3339) }
-	if ua.Valid { s.UpdatedAt = ua.Time.Format(time.RFC3339) }
-	return &s, nil
+	if desc.Valid { pl.Description = &desc.String }
+	if rj.Valid { pl.RequirementsJSON = &rj.String }
+	if sj.Valid { pl.StepsJSON = &sj.String }
+	if dj.Valid { pl.DependenciesJSON = &dj.String }
+	if ee.Valid { pl.EstimatedEffort = &ee.String }
+	if lang.Valid { pl.Language = &lang.String }
+	if fw.Valid { pl.Framework = &fw.String }
+	if mu.Valid { pl.ModelUsed = &mu.String }
+	if ca.Valid { pl.CreatedAt = ca.Time.Format(time.RFC3339) }
+	if ua.Valid { pl.UpdatedAt = ua.Time.Format(time.RFC3339) }
+	return &pl, nil
 }
 
-func (p *postgresStore) Create(ctx context.Context, s *sandbox) error {
-	query := `INSERT INTO ` + tableName + ` (id,tenant_id,session_id,runtime,image,cpu_limit,
-		memory_limit,timeout_seconds,environment_json,volumes_json,status,exit_code,output,
-		started_at,stopped_at,created_at,updated_at)
+func (p *postgresStore) Create(ctx context.Context, pl *codingPlan) error {
+	query := `INSERT INTO ` + tableName + ` (id,tenant_id,user_id,title,description,
+		requirements_json,steps_json,dependencies_json,estimated_effort,language,framework,
+		total_steps,completed_steps,status,model_used,created_at,updated_at)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`
-	_, err := p.db.ExecContext(ctx, query, s.ID, s.TenantID, s.SessionID, s.Runtime, s.Image,
-		s.CPULimit, s.MemoryLimit, s.TimeoutSeconds, s.EnvironmentJSON, s.VolumesJSON,
-		s.Status, s.ExitCode, s.Output, parseTimePtr(s.StartedAt), parseTimePtr(s.StoppedAt),
-		parseTime(s.CreatedAt), parseTime(s.UpdatedAt))
+	_, err := p.db.ExecContext(ctx, query, pl.ID, pl.TenantID, pl.UserID, pl.Title, pl.Description,
+		pl.RequirementsJSON, pl.StepsJSON, pl.DependenciesJSON, pl.EstimatedEffort,
+		pl.Language, pl.Framework, pl.TotalSteps, pl.CompletedSteps, pl.Status, pl.ModelUsed,
+		parseTime(pl.CreatedAt), parseTime(pl.UpdatedAt))
 	return err
 }
 
-func (p *postgresStore) Update(ctx context.Context, s *sandbox) error {
-	query := `UPDATE ` + tableName + ` SET session_id=$1,runtime=$2,image=$3,cpu_limit=$4,
-		memory_limit=$5,timeout_seconds=$6,environment_json=$7,volumes_json=$8,status=$9,
-		exit_code=$10,output=$11,started_at=$12,stopped_at=$13,updated_at=$14
+func (p *postgresStore) Update(ctx context.Context, pl *codingPlan) error {
+	query := `UPDATE ` + tableName + ` SET user_id=$1,title=$2,description=$3,requirements_json=$4,
+		steps_json=$5,dependencies_json=$6,estimated_effort=$7,language=$8,framework=$9,
+		total_steps=$10,completed_steps=$11,status=$12,model_used=$13,updated_at=$14
 		WHERE id=$15 AND tenant_id=$16`
-	res, err := p.db.ExecContext(ctx, query, s.SessionID, s.Runtime, s.Image, s.CPULimit,
-		s.MemoryLimit, s.TimeoutSeconds, s.EnvironmentJSON, s.VolumesJSON, s.Status,
-		s.ExitCode, s.Output, parseTimePtr(s.StartedAt), parseTimePtr(s.StoppedAt),
-		parseTime(s.UpdatedAt), s.ID, s.TenantID)
+	res, err := p.db.ExecContext(ctx, query, pl.UserID, pl.Title, pl.Description,
+		pl.RequirementsJSON, pl.StepsJSON, pl.DependenciesJSON, pl.EstimatedEffort,
+		pl.Language, pl.Framework, pl.TotalSteps, pl.CompletedSteps, pl.Status, pl.ModelUsed,
+		parseTime(pl.UpdatedAt), pl.ID, pl.TenantID)
 	if err != nil { return err }
 	n, _ := res.RowsAffected()
 	if n == 0 { return errors.New("not found") }
@@ -469,7 +454,7 @@ func (sv *server) handleList(w http.ResponseWriter, r *http.Request) {
 	limit := 20
 	if v, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && v > 0 && v <= 100 { limit = v }
 	filters := make(map[string]string)
-	for _, key := range []string{"runtime", "status", "session_id"} {
+	for _, key := range []string{"user_id", "status", "language"} {
 		if v := r.URL.Query().Get(key); v != "" { filters[key] = v }
 	}
 	cacheKey := fmt.Sprintf("list:%s:%s:%d:%v", tenantID, cursor, limit, filters)
@@ -499,32 +484,27 @@ func (sv *server) handleCreate(w http.ResponseWriter, r *http.Request) {
 	tenantID := r.Header.Get("X-Tenant-ID")
 	body, err := readJSON(r)
 	if err != nil { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()}); return }
-	sessionID, _ := body["session_id"].(string)
-	if sessionID == "" { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session_id is required"}); return }
-	runtime, _ := body["runtime"].(string)
-	if !validRuntimes[runtime] {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "runtime is required and must be one of: node, python, go, rust, java, dotnet, ruby, docker"}); return
-	}
+	userID, _ := body["user_id"].(string)
+	if userID == "" { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user_id is required"}); return }
+	title, _ := body["title"].(string)
+	if title == "" { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "title is required"}); return }
 	now := time.Now().UTC().Format(time.RFC3339)
-	s := &sandbox{
-		ID: newID(), TenantID: tenantID, SessionID: sessionID, Runtime: runtime,
-		Image: strPtr(body["image"]), CPULimit: "1", MemoryLimit: "512Mi", TimeoutSeconds: 300,
-		EnvironmentJSON: strPtr(body["environment_json"]), VolumesJSON: strPtr(body["volumes_json"]),
-		Status: "creating", CreatedAt: now, UpdatedAt: now,
+	pl := &codingPlan{
+		ID: newID(), TenantID: tenantID, UserID: userID, Title: title,
+		Description: strPtr(body["description"]), RequirementsJSON: strPtr(body["requirements_json"]),
+		StepsJSON: strPtr(body["steps_json"]), DependenciesJSON: strPtr(body["dependencies_json"]),
+		EstimatedEffort: strPtr(body["estimated_effort"]), Language: strPtr(body["language"]),
+		Framework: strPtr(body["framework"]), TotalSteps: 0, CompletedSteps: 0, Status: "draft",
+		ModelUsed: strPtr(body["model_used"]), CreatedAt: now, UpdatedAt: now,
 	}
-	if v, ok := body["cpu_limit"].(string); ok && v != "" { s.CPULimit = v }
-	if v, ok := body["memory_limit"].(string); ok && v != "" { s.MemoryLimit = v }
-	if v, ok := body["timeout_seconds"].(float64); ok { s.TimeoutSeconds = int(v) }
-	if v, ok := body["status"].(string); ok && validStatuses[v] { s.Status = v }
-	s.ExitCode = intPtr(body["exit_code"])
-	s.Output = strPtr(body["output"])
-	if v, ok := body["started_at"].(string); ok { s.StartedAt = &v }
-	if v, ok := body["stopped_at"].(string); ok { s.StoppedAt = &v }
-	if err := sv.store.Create(r.Context(), s); err != nil {
+	if v, ok := body["total_steps"].(float64); ok { pl.TotalSteps = int(v) }
+	if v, ok := body["completed_steps"].(float64); ok { pl.CompletedSteps = int(v) }
+	if v, ok := body["status"].(string); ok && validStatuses[v] { pl.Status = v }
+	if err := sv.store.Create(r.Context(), pl); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()}); return
 	}
 	sv.cache.invalidate("list:" + tenantID)
-	writeJSON(w, http.StatusCreated, map[string]any{"item": s, "event_topic": eventTopic + ".created"})
+	writeJSON(w, http.StatusCreated, map[string]any{"item": pl, "event_topic": eventTopic + ".created"})
 }
 
 func (sv *server) handleUpdate(w http.ResponseWriter, r *http.Request, id string) {
@@ -536,19 +516,19 @@ func (sv *server) handleUpdate(w http.ResponseWriter, r *http.Request, id string
 	}
 	body, err := readJSON(r)
 	if err != nil { writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()}); return }
-	if v, ok := body["session_id"].(string); ok && v != "" { existing.SessionID = v }
-	if v, ok := body["runtime"].(string); ok && validRuntimes[v] { existing.Runtime = v }
-	if v, exists := body["image"]; exists { existing.Image = strPtr(v) }
-	if v, ok := body["cpu_limit"].(string); ok && v != "" { existing.CPULimit = v }
-	if v, ok := body["memory_limit"].(string); ok && v != "" { existing.MemoryLimit = v }
-	if v, ok := body["timeout_seconds"].(float64); ok { existing.TimeoutSeconds = int(v) }
-	if v, exists := body["environment_json"]; exists { existing.EnvironmentJSON = strPtr(v) }
-	if v, exists := body["volumes_json"]; exists { existing.VolumesJSON = strPtr(v) }
+	if v, ok := body["user_id"].(string); ok && v != "" { existing.UserID = v }
+	if v, ok := body["title"].(string); ok && v != "" { existing.Title = v }
+	if v, exists := body["description"]; exists { existing.Description = strPtr(v) }
+	if v, exists := body["requirements_json"]; exists { existing.RequirementsJSON = strPtr(v) }
+	if v, exists := body["steps_json"]; exists { existing.StepsJSON = strPtr(v) }
+	if v, exists := body["dependencies_json"]; exists { existing.DependenciesJSON = strPtr(v) }
+	if v, exists := body["estimated_effort"]; exists { existing.EstimatedEffort = strPtr(v) }
+	if v, exists := body["language"]; exists { existing.Language = strPtr(v) }
+	if v, exists := body["framework"]; exists { existing.Framework = strPtr(v) }
+	if v, ok := body["total_steps"].(float64); ok { existing.TotalSteps = int(v) }
+	if v, ok := body["completed_steps"].(float64); ok { existing.CompletedSteps = int(v) }
 	if v, ok := body["status"].(string); ok && validStatuses[v] { existing.Status = v }
-	if _, exists := body["exit_code"]; exists { existing.ExitCode = intPtr(body["exit_code"]) }
-	if v, exists := body["output"]; exists { existing.Output = strPtr(v) }
-	if v, ok := body["started_at"].(string); ok { existing.StartedAt = &v }
-	if v, ok := body["stopped_at"].(string); ok { existing.StoppedAt = &v }
+	if v, exists := body["model_used"]; exists { existing.ModelUsed = strPtr(v) }
 	existing.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if err := sv.store.Update(r.Context(), existing); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()}); return
@@ -572,11 +552,12 @@ func (sv *server) handleDelete(w http.ResponseWriter, r *http.Request, id string
 func handleExplain(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"service": serviceName, "module": moduleName, "base_path": basePath,
-		"database": dbName, "table": tableName, "event_topic": eventTopic, "entity": "sandbox",
-		"fields": []string{"id", "tenant_id", "session_id", "runtime", "image", "cpu_limit",
-			"memory_limit", "timeout_seconds", "environment_json", "volumes_json", "status",
-			"exit_code", "output", "started_at", "stopped_at", "created_at", "updated_at"},
-		"filters": []string{"runtime", "status", "session_id"}, "pagination": "cursor-based",
+		"database": dbName, "table": tableName, "event_topic": eventTopic, "entity": "codingPlan",
+		"fields": []string{"id", "tenant_id", "user_id", "title", "description",
+			"requirements_json", "steps_json", "dependencies_json", "estimated_effort",
+			"language", "framework", "total_steps", "completed_steps", "status", "model_used",
+			"created_at", "updated_at"},
+		"filters": []string{"user_id", "status", "language"}, "pagination": "cursor-based",
 		"cache_ttl": cacheTTL.String(),
 		"endpoints": map[string]string{
 			"list": "GET " + basePath, "get": "GET " + basePath + "/{id}",

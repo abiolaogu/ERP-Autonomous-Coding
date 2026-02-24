@@ -1,0 +1,181 @@
+version: "3.9"
+
+services:
+  erp-coding-gateway:
+    build:
+      context: ../cmd/server
+      dockerfile: ../../services/agent-core/Dockerfile
+    command: ["./service"]
+    environment:
+      PORT: "8090"
+      MODULE_NAME: "ERP-Autonomous-Coding"
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8090/healthz"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+
+  agent-core:
+    build:
+      context: ../services/agent-core
+    environment:
+      PORT: "8080"
+      MODULE_NAME: "ERP-Autonomous-Coding"
+      DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+    ports:
+      - "18801:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+
+  git-bridge:
+    build:
+      context: ../services/git-bridge
+    environment:
+      PORT: "8080"
+      MODULE_NAME: "ERP-Autonomous-Coding"
+      DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+    ports:
+      - "18802:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+
+  review-engine:
+    build:
+      context: ../services/review-engine
+    environment:
+      PORT: "8080"
+      MODULE_NAME: "ERP-Autonomous-Coding"
+      DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+    ports:
+      - "18803:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+
+  sandbox-runtime:
+    build:
+      context: ../services/sandbox-runtime
+    environment:
+      PORT: "8080"
+      MODULE_NAME: "ERP-Autonomous-Coding"
+      DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+    ports:
+      - "18804:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+
+  task-planner:
+    build:
+      context: ../services/task-planner
+    environment:
+      PORT: "8080"
+      MODULE_NAME: "ERP-Autonomous-Coding"
+      DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+    ports:
+      - "18805:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+
+  ide-server:
+    build:
+      context: ../services/ide-server
+    environment:
+      PORT: "3000"
+      MODULE_NAME: "ERP-Autonomous-Coding"
+    ports:
+      - "18806:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      interval: 20s
+      timeout: 3s
+      retries: 3
+
+  hasura:
+    image: hasura/graphql-engine:v2.40.0
+    ports:
+      - "19111:8080"
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+      HASURA_GRAPHQL_METADATA_DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+      HASURA_GRAPHQL_ADMIN_SECRET: "${HASURA_ADMIN_SECRET:-hasura-admin-secret}"
+      HASURA_GRAPHQL_JWT_SECRET: '{"type":"RS256","jwk_url":"${JWK_URL:-http://identity-service:8080/.well-known/jwks.json}","claims_namespace":"https://erp.io/jwt/claims","claims_format":"json","claims_map":{"x-hasura-allowed-roles":{"path":"$$.roles"},"x-hasura-default-role":{"path":"$$.default_role"},"x-hasura-user-id":{"path":"$$.user_id"},"x-hasura-tenant-id":{"path":"$$.tenant_id"}}}'
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: anonymous
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+      HASURA_GRAPHQL_DEV_MODE: "true"
+      HASURA_GRAPHQL_ENABLED_LOG_TYPES: "startup,http-log,webhook-log,websocket-log,query-log"
+      HASURA_GRAPHQL_ENABLE_TELEMETRY: "false"
+      HASURA_GRAPHQL_CORS_DOMAIN: "*"
+      HASURA_GRAPHQL_ENABLE_APOLLO_FEDERATION: "true"
+      ACTIONS_BASE_URL: "http://erp-coding-gateway:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: erp_coding
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: erp
+    ports:
+      - "5441:5432"
+    volumes:
+      - coding-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp -d erp_coding"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6388:6379"
+    volumes:
+      - coding-redis:/data
+
+volumes:
+  coding-pgdata:
+  coding-redis:
