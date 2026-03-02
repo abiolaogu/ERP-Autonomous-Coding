@@ -34,6 +34,12 @@ const ApprovalList = lazy(() => import("./pages/approvals/ApprovalList"));
 const ApprovalShow = lazy(() => import("./pages/approvals/ApprovalShow"));
 const PipelineList = lazy(() => import("./pages/pipelines/PipelineList"));
 const PipelineShow = lazy(() => import("./pages/pipelines/PipelineShow"));
+const CodeReview = lazy(() => import("./pages/reviews/CodeReview"));
+const CodeQuality = lazy(() => import("./pages/quality/CodeQuality"));
+const PipelineInsights = lazy(() => import("./pages/pipelines/PipelineInsights"));
+const SecurityScanner = lazy(() => import("./pages/security/SecurityScanner"));
+const DocumentationHub = lazy(() => import("./pages/docs/DocumentationHub"));
+const DeveloperAnalytics = lazy(() => import("./pages/analytics/DeveloperAnalytics"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,7 +58,7 @@ const Loading: React.FC = () => (
 
 const App: React.FC = () => {
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <QueryClientProvider client={queryClient}>
         <ConfigProvider theme={theme}>
           <AntApp>
@@ -117,6 +123,36 @@ const App: React.FC = () => {
                     icon: <DeploymentUnitOutlined />,
                   },
                 },
+                {
+                  name: "code-review",
+                  list: "/code-review",
+                  meta: { label: "Code Review" },
+                },
+                {
+                  name: "code-quality",
+                  list: "/code-quality",
+                  meta: { label: "Code Quality" },
+                },
+                {
+                  name: "pipeline-insights",
+                  list: "/pipeline-insights",
+                  meta: { label: "Pipeline Insights" },
+                },
+                {
+                  name: "security-scanner",
+                  list: "/security-scanner",
+                  meta: { label: "Security Scanner" },
+                },
+                {
+                  name: "documentation",
+                  list: "/documentation",
+                  meta: { label: "Documentation" },
+                },
+                {
+                  name: "developer-analytics",
+                  list: "/developer-analytics",
+                  meta: { label: "Developer Analytics" },
+                },
               ]}
               options={{
                 syncWithLocation: true,
@@ -148,6 +184,12 @@ const App: React.FC = () => {
                       <Route index element={<PipelineList />} />
                       <Route path=":id" element={<PipelineShow />} />
                     </Route>
+                    <Route path="/code-review" element={<CodeReview />} />
+                    <Route path="/code-quality" element={<CodeQuality />} />
+                    <Route path="/pipeline-insights" element={<PipelineInsights />} />
+                    <Route path="/security-scanner" element={<SecurityScanner />} />
+                    <Route path="/documentation" element={<DocumentationHub />} />
+                    <Route path="/developer-analytics" element={<DeveloperAnalytics />} />
                   </Route>
                 </Routes>
               </Suspense>

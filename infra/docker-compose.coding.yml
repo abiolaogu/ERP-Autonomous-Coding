@@ -26,7 +26,7 @@ services:
     environment:
       PORT: "8080"
       MODULE_NAME: "ERP-Autonomous-Coding"
-      DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+      DATABASE_URL: "${ERP_SHARED_DB_URL:-postgres://erp_admin:changeme_in_production@localhost:5432/erp_shared?sslmode=disable}"
     ports:
       - "18801:8080"
     depends_on:
@@ -44,7 +44,7 @@ services:
     environment:
       PORT: "8080"
       MODULE_NAME: "ERP-Autonomous-Coding"
-      DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+      DATABASE_URL: "${ERP_SHARED_DB_URL:-postgres://erp_admin:changeme_in_production@localhost:5432/erp_shared?sslmode=disable}"
     ports:
       - "18802:8080"
     depends_on:
@@ -62,7 +62,7 @@ services:
     environment:
       PORT: "8080"
       MODULE_NAME: "ERP-Autonomous-Coding"
-      DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+      DATABASE_URL: "${ERP_SHARED_DB_URL:-postgres://erp_admin:changeme_in_production@localhost:5432/erp_shared?sslmode=disable}"
     ports:
       - "18803:8080"
     depends_on:
@@ -80,7 +80,7 @@ services:
     environment:
       PORT: "8080"
       MODULE_NAME: "ERP-Autonomous-Coding"
-      DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+      DATABASE_URL: "${ERP_SHARED_DB_URL:-postgres://erp_admin:changeme_in_production@localhost:5432/erp_shared?sslmode=disable}"
     ports:
       - "18804:8080"
     depends_on:
@@ -98,7 +98,7 @@ services:
     environment:
       PORT: "8080"
       MODULE_NAME: "ERP-Autonomous-Coding"
-      DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+      DATABASE_URL: "${ERP_SHARED_DB_URL:-postgres://erp_admin:changeme_in_production@localhost:5432/erp_shared?sslmode=disable}"
     ports:
       - "18805:8080"
     depends_on:
@@ -132,8 +132,8 @@ services:
     ports:
       - "19111:8080"
     environment:
-      HASURA_GRAPHQL_DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
-      HASURA_GRAPHQL_METADATA_DATABASE_URL: "postgres://erp:erp@postgres:5432/erp_coding?sslmode=disable"
+      HASURA_GRAPHQL_DATABASE_URL: "${ERP_SHARED_DB_URL:-postgres://erp_admin:changeme_in_production@localhost:5432/erp_shared?sslmode=disable}"
+      HASURA_GRAPHQL_METADATA_DATABASE_URL: "${ERP_SHARED_DB_URL:-postgres://erp_admin:changeme_in_production@localhost:5432/erp_shared?sslmode=disable}"
       HASURA_GRAPHQL_ADMIN_SECRET: "${HASURA_ADMIN_SECRET:-hasura-admin-secret}"
       HASURA_GRAPHQL_JWT_SECRET: '{"type":"RS256","jwk_url":"${JWK_URL:-http://identity-service:8080/.well-known/jwks.json}","claims_namespace":"https://erp.io/jwt/claims","claims_format":"json","claims_map":{"x-hasura-allowed-roles":{"path":"$$.roles"},"x-hasura-default-role":{"path":"$$.default_role"},"x-hasura-user-id":{"path":"$$.user_id"},"x-hasura-tenant-id":{"path":"$$.tenant_id"}}}'
       HASURA_GRAPHQL_UNAUTHORIZED_ROLE: anonymous

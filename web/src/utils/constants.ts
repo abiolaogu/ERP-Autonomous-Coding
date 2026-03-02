@@ -1,7 +1,7 @@
 export const APP_NAME = "ERP Autonomous Coding";
 
 export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
-export const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_URL || "http://localhost:4000/graphql";
+export const GRAPHQL_URL = import.meta.env.VITE_GRAPHQL_URL || "http://localhost:8090/v1/graphql";
 
 export const TOKEN_KEY = "erp-coding-access-token";
 export const REFRESH_TOKEN_KEY = "erp-coding-refresh-token";
