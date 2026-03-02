@@ -5,5 +5,5 @@ export const modulePolicy = {
   slug: "autonomous-coding",
   authPolicy: env.authPolicy as AuthPolicy,
   notes: "",
-  altUrls: "none",
+  altUrls: "",
 };
