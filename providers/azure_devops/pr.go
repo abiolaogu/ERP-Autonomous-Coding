@@ -1,3 +1,0 @@
-package azuredevops
-
-func OpenPullRequest() {}

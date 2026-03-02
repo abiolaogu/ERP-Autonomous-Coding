@@ -1,1 +1,0 @@
-class Autonomous CodingPlugin

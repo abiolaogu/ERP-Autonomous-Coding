@@ -1,3 +1,0 @@
-package bitbucket
-
-func OpenPullRequest() {}
