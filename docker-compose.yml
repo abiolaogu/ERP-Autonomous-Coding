@@ -1,38 +1,35 @@
-version: "3.9"
-
+version: '3.9'
 services:
   autonomous-coding-api:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8095:8090"
-
+    - 8095:8090
   agent-core:
     build: ./services/agent-core
     ports:
-      - "8205:8080"
-
+    - 8205:8080
   review-engine:
     build: ./services/review-engine
     ports:
-      - "8206:8080"
-
+    - 8206:8080
   sandbox-runtime:
     build: ./services/sandbox-runtime
-
   git-bridge:
     build: ./services/git-bridge
-
   ide-server:
     build: ./services/ide-server
     ports:
-      - "8207:8080"
-
+    - 8207:8080
   redis:
     image: redis:7
-
   task-planner:
     build: ./services/task-planner
     ports:
-      - "8209:8080"
+    - 8209:8080
+x-shared-infra:
+  hasura_graphql_url: ${ERP_SHARED_HASURA_URL:-http://localhost:8090/v1/graphql}
+  postgres_url: ${ERP_SHARED_DB_URL:-postgres://erp_admin:changeme_in_production@localhost:5432/erp_shared?sslmode=disable}
+  iam_url: ${ERP_SHARED_IAM_URL:-http://localhost:8081}
+  otlp_endpoint: ${ERP_SHARED_OTLP_ENDPOINT:-http://localhost:4317}
