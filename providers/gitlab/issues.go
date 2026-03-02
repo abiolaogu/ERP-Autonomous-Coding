@@ -1,3 +1,0 @@
-package gitlab
-
-func TriageIssue() {}
