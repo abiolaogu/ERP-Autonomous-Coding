@@ -1,178 +1,280 @@
-# Low Level Design (LLD)
+# Low-Level Design (LLD) -- Sovereign Code
 
-## Module Design
+**Module:** ERP-Autonomous-Coding | **Port:** 5182 | **Version:** 3.0 | **Date:** 2026-03-03
 
-### Identity and Access Module
+---
 
-- Validates JWT signature, issuer, audience, and expiration.
-- Resolves role claims for Tenant and Org scope.
-- Enforces route-level policy checks.
+## 1. Code Generation Pipeline
 
-### Tenant Management Module
-
-- Creates Tenant, default Org, baseline policies.
-- Maintains tenant status lifecycle (active, suspended, archived).
-
-### Billing Module
-
-- Maintains subscription and usage records.
-- Creates idempotent charge commands with external payment reference.
-
-### Audit Module
-
-- Writes immutable events with actor/action/target metadata.
-- Supports indexed querying by Tenant, Org, actor, and action.
-
-## Module Interaction (Pseudo UML)
-
-```mermaid
-classDiagram
-  class AuthMiddleware {
-    +validateToken(jwt)
-    +resolveContext()
-    +authorize(action, resource)
-  }
-
-  class TenantService {
-    +createTenant(request)
-    +getTenant(tenantId)
-  }
-
-  class UserService {
-    +createUser(tenantId, request)
-    +assignRole(tenantId, userId, role)
-  }
-
-  class BillingService {
-    +createCharge(tenantId, request)
-    +getBillingSummary(tenantId)
-  }
-
-  class AuditService {
-    +recordEvent(event)
-    +searchEvents(filter)
-  }
-
-  AuthMiddleware --> TenantService
-  AuthMiddleware --> UserService
-  AuthMiddleware --> BillingService
-  TenantService --> AuditService
-  UserService --> AuditService
-  BillingService --> AuditService
+```
+Developer types in IDE
+    │
+    ▼
+┌─────────────────────────────┐
+│ 1. CONTEXT GATHERING         │
+│  ├─ Current file content    │
+│  ├─ Cursor position + prefix│
+│  ├─ Open editor tabs        │
+│  ├─ Import graph (3 hops)   │
+│  ├─ Codebase semantic search│ ← pgvector: find relevant code snippets
+│  └─ Team style rules        │ ← Architecture rules from DB
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 2. PROMPT CONSTRUCTION       │
+│  ├─ System: "You are a code │
+│  │   assistant for [lang]"  │
+│  ├─ Context: related code   │
+│  ├─ Prefix: code before     │
+│  │   cursor                 │
+│  ├─ Suffix: code after      │
+│  │   cursor (FIM)           │
+│  └─ Instructions: style     │
+│      rules, patterns        │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 3. LLM INFERENCE             │
+│  ├─ Model selection:        │
+│  │   Line → Haiku/CodeLlama │
+│  │   Multi-line → Sonnet    │
+│  │   Multi-file → Sonnet    │
+│  ├─ Streaming tokens        │
+│  └─ <500ms for completions  │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 4. POST-PROCESSING           │
+│  ├─ Syntax validation       │ ← tree-sitter parse (syntax OK?)
+│  ├─ Style check             │ ← Lint against team rules
+│  ├─ Security scan           │ ← Check for secrets, vulns
+│  ├─ Deduplication           │ ← Avoid suggesting existing code
+│  └─ Confidence scoring      │ ← Rank multiple completions
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 5. DELIVERY                  │
+│  ├─ Ghost text in IDE       │ ← Gray text overlay
+│  ├─ Tab to accept           │
+│  ├─ Esc to dismiss          │
+│  └─ Log: accepted/rejected  │
+└─────────────────────────────┘
 ```
 
-## Sequence Diagrams
+## 2. Code Review Pipeline
 
-### Login
-
-```mermaid
-sequenceDiagram
-  participant User
-  participant Portal
-  participant API
-  participant Identity
-  participant Audit
-
-  User->>Portal: Submit credentials
-  Portal->>API: POST /auth/login
-  API->>Identity: Verify credentials
-  Identity-->>API: Token pair with claims
-  API->>Audit: record login success event
-  API-->>Portal: Access and refresh tokens
-  Portal-->>User: Session started
+```
+PR Created (Webhook from GitHub/GitLab)
+    │
+    ▼
+┌─────────────────────────────┐
+│ 1. DIFF PARSING              │
+│  ├─ Fetch PR diff via API   │
+│  ├─ Parse into structured   │
+│  │   changeset per file     │
+│  ├─ Classify: new/modified/ │
+│  │   deleted/renamed        │
+│  └─ Calculate diff size     │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 2. CONTEXT ENRICHMENT        │
+│  ├─ Full file content for   │
+│  │   each changed file      │
+│  ├─ Knowledge graph: what   │
+│  │   calls changed functions│
+│  ├─ Architecture rules for  │
+│  │   affected layers        │
+│  ├─ Test coverage data for  │
+│  │   changed code           │
+│  └─ Historical PR patterns  │
+│      for similar changes    │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 3. MULTI-PASS ANALYSIS       │
+│                              │
+│  Pass 1: Pattern Matching    │
+│  ├─ SAST rules (regex + AST)│
+│  ├─ Anti-pattern detection   │
+│  └─ Style rule violations    │
+│                              │
+│  Pass 2: LLM Analysis        │
+│  ├─ Bug detection            │
+│  ├─ Performance analysis     │
+│  ├─ Architecture compliance  │
+│  ├─ Best practices review    │
+│  └─ Generate inline comments │
+│                              │
+│  Pass 3: Security Scan       │
+│  ├─ OWASP vulnerability check│
+│  ├─ Secrets detection        │
+│  ├─ Dependency CVE check     │
+│  └─ Config security review   │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 4. REVIEW GENERATION         │
+│  ├─ PR Summary: what changed│
+│  │   why, impact assessment  │
+│  ├─ Risk Level: low/med/high│
+│  ├─ Inline comments with    │
+│  │   suggested fixes (diffs)│
+│  ├─ Overall score (0-100)   │
+│  └─ Post review via API     │
+│      (GitHub/GitLab comments)│
+└─────────────────────────────┘
 ```
 
-### Create Tenant
+## 3. Test Generation Pipeline
 
-```mermaid
-sequenceDiagram
-  participant Admin
-  participant AdminPortal
-  participant API
-  participant TenantSvc
-  participant UserSvc
-  participant Audit
-
-  Admin->>AdminPortal: Create Tenant request
-  AdminPortal->>API: POST /tenants
-  API->>TenantSvc: createTenant()
-  TenantSvc->>UserSvc: createDefaultOrgAdmin()
-  TenantSvc->>Audit: record tenant.created
-  API-->>AdminPortal: Tenant created response
+```
+Target Code Selection (file or function)
+    │
+    ▼
+┌─────────────────────────────┐
+│ 1. CODE ANALYSIS             │
+│  ├─ Parse AST                │
+│  ├─ Extract function sigs    │
+│  ├─ Identify input types     │
+│  ├─ Identify return types    │
+│  ├─ Find error conditions    │
+│  └─ Detect dependencies      │
+│      (mocks needed)          │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 2. TEST CASE PLANNING        │
+│  ├─ Happy path scenarios    │
+│  ├─ Edge cases (null, empty │
+│  │   max, min, boundary)     │
+│  ├─ Error handling paths    │
+│  ├─ Concurrency scenarios   │
+│  └─ Look at existing tests  │
+│      for patterns            │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 3. CODE GENERATION           │
+│  ├─ Select test framework   │
+│  ├─ Generate mock/stub code │
+│  ├─ Generate test functions  │
+│  ├─ Generate assertions     │
+│  └─ Generate test data      │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 4. VALIDATION                │
+│  ├─ Execute tests in sandbox│
+│  ├─ Measure coverage        │
+│  ├─ Fix failing tests       │
+│  │   (up to 3 iterations)   │
+│  └─ Report results          │
+└─────────────────────────────┘
 ```
 
-### Role Assignment
+## 4. Codebase Indexing Pipeline
 
-```mermaid
-sequenceDiagram
-  participant OrgAdmin
-  participant AdminPortal
-  participant API
-  participant UserSvc
-  participant Audit
-  participant Notify
-
-  OrgAdmin->>AdminPortal: Assign role to User
-  AdminPortal->>API: PATCH /tenants/{id}/users/{id}/roles
-  API->>UserSvc: validate policy and assign role
-  UserSvc->>Audit: record user.role_assigned
-  UserSvc->>Notify: send role change notification
-  API-->>AdminPortal: role assignment result
+```
+Git Push / Webhook
+    │
+    ▼
+┌─────────────────────────────┐
+│ 1. INCREMENTAL DIFF          │
+│  ├─ git diff HEAD~1..HEAD   │
+│  ├─ Identify changed files  │
+│  └─ Queue for processing    │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 2. AST PARSING               │
+│  ├─ tree-sitter parse each  │
+│  │   changed file            │
+│  ├─ Extract symbols:        │
+│  │   functions, classes,     │
+│  │   types, imports          │
+│  └─ <50ms per file          │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 3. GRAPH UPDATE              │
+│  ├─ Upsert nodes in Neo4j   │
+│  ├─ Update relationships    │
+│  │   (calls, imports,       │
+│  │   implements)             │
+│  ├─ Remove deleted symbols  │
+│  └─ <5s for incremental     │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 4. EMBEDDING UPDATE          │
+│  ├─ Generate embeddings for │
+│  │   changed symbols         │
+│  ├─ Upsert in pgvector      │
+│  └─ <10s for incremental    │
+└─────────────┬───────────────┘
+              │
+              ▼
+┌─────────────────────────────┐
+│ 5. TRIGGER ANALYSES          │
+│  ├─ Security scan on changed│
+│  │   files                   │
+│  ├─ Debt score recalculation│
+│  └─ Architecture check      │
+└─────────────────────────────┘
 ```
 
-### Billing Charge
+## 5. Performance Targets
 
-```mermaid
-sequenceDiagram
-  participant System
-  participant API
-  participant BillingSvc
-  participant PaymentGateway
-  participant Audit
+| Operation | Target | Mechanism |
+|---|---|---|
+| Line completion | <200ms | Self-hosted model + caching |
+| Multi-line completion | <500ms | Streaming from Claude Haiku |
+| Multi-file generation | <30s | Claude Sonnet with full context |
+| PR review | <90s | Parallel analysis passes |
+| Test generation (100 functions) | <60s | Parallel per-function generation |
+| Security scan (full repo) | <30s | Rule engine + parallel CVE lookup |
+| Codebase index (incremental) | <30s | Delta processing only |
+| Codebase index (full, 1M LOC) | <15min | Parallel parsing + batch embedding |
+| Semantic code search | <100ms | pgvector IVFFlat index |
+| Knowledge graph query | <50ms | Neo4j with cached frequent paths |
 
-  System->>API: POST /tenants/{id}/billing/charges
-  API->>BillingSvc: createCharge()
-  BillingSvc->>PaymentGateway: request charge authorization
-  PaymentGateway-->>BillingSvc: charge outcome + reference
-  BillingSvc->>Audit: record billing.charge_created
-  API-->>System: charge accepted response
-```
+## 6. API Endpoints
 
-### Audit Log Write
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/v1/completions` | POST | Code completion (IDE) |
+| `/api/v1/generate` | POST | Multi-file code generation |
+| `/api/v1/repositories` | CRUD | Repository management |
+| `/api/v1/repositories/:id/index` | POST | Trigger re-index |
+| `/api/v1/reviews` | GET/POST | Review management |
+| `/api/v1/reviews/:id/suggestions` | GET | Get review suggestions |
+| `/api/v1/tests/generate` | POST | Generate tests |
+| `/api/v1/security/scan` | POST | Trigger security scan |
+| `/api/v1/security/vulnerabilities` | GET | List vulnerabilities |
+| `/api/v1/debt` | GET | Technical debt overview |
+| `/api/v1/debt/items` | GET | Debt items list |
+| `/api/v1/search` | POST | Semantic code search |
+| `/api/v1/graph/query` | POST | Knowledge graph query |
+| `/api/v1/docs/generate` | POST | Documentation generation |
+| `/api/v1/architecture/rules` | CRUD | Architecture rules |
+| `/api/v1/architecture/check` | POST | Run compliance check |
+| `/api/v1/webhooks/github` | POST | GitHub webhook handler |
+| `/api/v1/webhooks/gitlab` | POST | GitLab webhook handler |
 
-```mermaid
-sequenceDiagram
-  participant Service
-  participant AuditSvc
-  participant AuditDB
-  participant SIEM
+---
 
-  Service->>AuditSvc: emit event envelope
-  AuditSvc->>AuditDB: append immutable event
-  AuditSvc->>SIEM: forward normalized event
-  AuditSvc-->>Service: ack with event_id
-```
-
-## Data Access Patterns
-
-- Every query includes Tenant key filter.
-- Write operations include actor identity from token claims.
-- Sensitive fields are encrypted before persistence.
-
-## Caching Strategy
-
-- Role and policy cache with short TTL (5 min) and explicit invalidation.
-- Tenant configuration cache with event-based invalidation.
-
-## Failure Handling
-
-- Retries with exponential backoff for transient Service calls.
-- Dead-letter queue for failed notification or audit forwarding operations.
-- Idempotency keys for external billing requests.
-
-## LLD-to-Test Mapping
-
-- Policy engine tests for role assignment edge cases
-- Transactional tests for tenant creation workflow
-- Contract tests for billing and notification integrations
-
+*Confidential. Sovereign Code. All rights reserved.*
